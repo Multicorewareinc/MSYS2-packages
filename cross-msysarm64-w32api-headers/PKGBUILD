@@ -1,0 +1,67 @@
+# Maintainer: Windows on ARM Experiments
+pkgname="cross-msysarm64-w32api-headers"
+pkgver=13.0.0
+pkgrel=5
+pkgdesc="Win32 API headers for aarch64-pc-msys sysroot (WoA)"
+arch=('x86_64')
+url="https://github.com/Windows-on-ARM-Experiments/mingw-woarm64"
+license=('custom')
+options=('!strip' '!buildflags')
+
+makedepends=("git" "autotools")
+
+source=(
+  "mingw-w64::git+https://github.com/Windows-on-ARM-Experiments/mingw-woarm64.git"
+)
+
+sha256sums=('SKIP')
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+build() {
+  mkdir -p ${srcdir}/headers-build
+  cd ${srcdir}/headers-build
+
+  ${srcdir}/mingw-w64/mingw-w64-headers/configure \
+    --prefix=${_sysroot} \
+    --host=${_target} \
+    --build=${CHOST} \
+    --enable-sdk=all \
+    --enable-idl \
+    --with-default-win32-winnt=0x0A00 \
+    --with-default-msvcrt=msvcrt
+
+  make
+}
+
+package() {
+  cd ${srcdir}/headers-build
+
+  # Install to both bare sysroot and sysroot/usr for maximum compatibility
+  # Some tools look in /usr/aarch64-pc-msys/include/
+  # Others look in /usr/aarch64-pc-msys/usr/include/
+
+  # Install to sysroot/usr (standard prefix install)
+  make DESTDIR=${pkgdir} install
+
+  # Also copy to bare sysroot locations
+  mkdir -p ${pkgdir}${_sysroot}/include
+  mkdir -p ${pkgdir}${_sysroot}/sys-include
+  cp -r ${pkgdir}${_sysroot}/usr/include/. \
+    ${pkgdir}${_sysroot}/include/
+  cp -r ${pkgdir}${_sysroot}/usr/include/. \
+    ${pkgdir}${_sysroot}/sys-include/
+
+  # Fix _WIN64 for aarch64 pointer sizes in all locations
+  find ${pkgdir}${_sysroot} -name "basetsd.h" -exec \
+    sed -i 's/#ifdef _WIN64/#if defined(_WIN64) || defined(__aarch64__)/' {} \;
+
+  echo "--- cross-msysarm64-w32api-headers check ---"
+  [ -f ${pkgdir}${_sysroot}/usr/include/windows.h ] && \
+    echo "usr/include/windows.h OK" || echo "WARNING: usr/include/windows.h MISSING"
+  [ -f ${pkgdir}${_sysroot}/include/windows.h ] && \
+    echo "include/windows.h OK" || echo "WARNING: include/windows.h MISSING"
+  [ -f ${pkgdir}${_sysroot}/sys-include/windows.h ] && \
+    echo "sys-include/windows.h OK" || echo "WARNING: sys-include/windows.h MISSING"
+}
