@@ -1,0 +1,58 @@
+# Maintainer: Windows on ARM Experiments
+
+_realname=msys2-runtime
+pkgname="cross-msysarm64-runtime-devel"
+pkgver=3.6.7
+pkgrel=3
+pkgdesc="Cross msys2-runtime headers for aarch64-pc-msys sysroot (newlib + cygwin)"
+arch=('x86_64')
+url="https://cygwin.com"
+license=('GPL')
+options=('!strip' '!buildflags')
+makedepends=("git")
+source=(
+  # Using cygwin-own — full top-level source tree with newlib + winsup
+  # This is the correct structure matching the Cygwin reference build scripts
+  "${_realname}::git+https://github.com/thiru-mcw/cygwin-own.git#branch=mcw/main"
+)
+sha256sums=('SKIP')
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+package() {
+  _sysroot_bare=/usr/${_target}
+  _sysroot_usr=/usr/${_target}/usr
+
+  mkdir -p ${pkgdir}/${_sysroot_bare}/sys-include
+  mkdir -p ${pkgdir}/${_sysroot_bare}/include
+  mkdir -p ${pkgdir}/${_sysroot_usr}/sys-include
+  mkdir -p ${pkgdir}/${_sysroot_usr}/include
+
+  # newlib headers FIRST (base layer)
+  for dest in \
+    ${pkgdir}/${_sysroot_bare}/sys-include \
+    ${pkgdir}/${_sysroot_bare}/include \
+    ${pkgdir}/${_sysroot_usr}/sys-include \
+    ${pkgdir}/${_sysroot_usr}/include; do
+    cp -r ${srcdir}/${_realname}/newlib/libc/include/. ${dest}/
+  done
+
+  # cygwin headers SECOND (override layer)
+  for dest in \
+    ${pkgdir}/${_sysroot_bare}/sys-include \
+    ${pkgdir}/${_sysroot_bare}/include \
+    ${pkgdir}/${_sysroot_usr}/sys-include \
+    ${pkgdir}/${_sysroot_usr}/include; do
+    cp -r ${srcdir}/${_realname}/winsup/cygwin/include/. ${dest}/
+  done
+
+  echo "--- Header install check ---"
+  [ -f ${pkgdir}/${_sysroot_bare}/include/stdio.h ] && \
+    echo "bare/include/stdio.h OK" || echo "WARNING: bare/include/stdio.h MISSING"
+  [ -f ${pkgdir}/${_sysroot_usr}/include/stdio.h ] && \
+    echo "usr/include/stdio.h OK" || echo "WARNING: usr/include/stdio.h MISSING"
+  grep -c "__aarch64__" \
+    ${pkgdir}/${_sysroot_bare}/include/cygwin/signal.h 2>/dev/null && \
+    echo "signal.h aarch64 OK" || echo "WARNING: signal.h missing aarch64"
+}
