@@ -1,0 +1,173 @@
+# Maintainer: Windows on ARM Experiments
+
+_realname=gcc
+_target=aarch64-pc-msys
+pkgname="cross-msysarm64-${_realname}-stage1"
+provides=("cross-msysarm64-${_realname}")
+_realver=15.0.1
+pkgver=15.0.1dev
+pkgrel=9
+pkgdesc="Cross GCC for aarch64-pc-msys (stage1)"
+arch=('i686' 'x86_64')
+url="https://gcc.gnu.org"
+license=('GPL' 'LGPL' 'FDL')
+depends=("zlib" "mpc" "isl" "libzstd")
+makedepends=(
+  "gcc"
+  "lndir"
+  "gmp-devel"
+  "mpc-devel"
+  "zlib-devel"
+  "isl-devel"
+  "autotools"
+  "gperf"
+  "libzstd-devel"
+  "cross-msysarm64-binutils"
+  "cross-msysarm64-runtime-devel"   # provides newlib + cygwin headers
+  "cross-msysarm64-w32api-headers"  # provides win32 API headers
+  "git"
+)
+options=('!strip' 'staticlibs' '!emptydirs' '!buildflags')
+source=(
+  "${_realname}::git+https://github.com/Windows-on-ARM-Experiments/gcc-woarm64.git#branch=fix-va-list"
+  0012-Handle-spaces-in-path-for-default-manifest.patch
+  0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch
+  0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch
+  9998-aarch64-pc-msys-target.patch
+)
+sha256sums=(
+  'SKIP'
+  'e98805ead7d78ee2a92f237894c4b2b7ddc1688e1b517d8c04f28d440202e40f'
+  'fd9bdecb2bbc4796bbc9f00b708dac42ef9e3464a06d6d27e5475cee117de5be'
+  'ad1f7b5e7afaaec008b7cbd14feea13a10989fa91bda7003af72d457619bb199'
+  'SKIP'
+)
+
+apply_patch_with_msg() {
+  for _fname in "$@"; do
+    msg2 "Applying ${_fname}"
+    patch -Nbp1 -i "${srcdir}"/${_fname}
+  done
+}
+
+del_file_exists() {
+  for _fname in "$@"; do
+    if [ -f $_fname ] || [ -d $_fname ]; then
+      rm -rf $_fname
+    fi
+  done
+}
+
+prepare() {
+  cd ${srcdir}/${_realname}
+
+  del_file_exists libgomp/config/cygwin/plugin-suffix.h
+
+  apply_patch_with_msg \
+    0012-Handle-spaces-in-path-for-default-manifest.patch \
+    0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch \
+    0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch \
+    9998-aarch64-pc-msys-target.patch
+
+  # Verify sysroot has the headers we need before attempting build
+  echo "--- GCC stage1 sysroot header check ---"
+  grep -c "__aarch64__" /usr/${_target}/sys-include/cygwin/signal.h && \
+    echo "cygwin/signal.h aarch64 OK" || \
+    echo "WARNING: sysroot missing aarch64 cygwin headers"
+  [ -f /usr/${_target}/sys-include/stdio.h ] && \
+    echo "newlib stdio.h OK" || \
+    echo "WARNING: newlib stdio.h MISSING from sysroot - check cross-msysarm64-runtime-devel"
+}
+
+build() {
+  export lt_cv_deplibs_check_method='pass_all'
+  mkdir -p ${srcdir}/gcc-build && cd ${srcdir}/gcc-build
+
+  ../${_realname}/configure \
+    --prefix=/usr \
+    --build=x86_64-pc-msys \
+    --host=x86_64-pc-msys \
+    --target=${_target} \
+    --with-sysroot=/usr/${_target} \
+    --with-arch=armv8-a \
+    --with-tune=cortex-a53 \
+    --enable-languages=c,c++,lto \
+    --disable-__cxa_atexit \
+    --enable-threads=posix \
+    --with-dwarf2 \
+    --disable-bootstrap \
+    --disable-shared \
+    --enable-static \
+    --disable-multilib \
+    --disable-plugins \
+    --disable-libatomic \
+    --disable-libgomp \
+    --disable-libquadmath \
+    --disable-libssp \
+    --disable-nls \
+    --disable-werror \
+    --disable-symvers \
+    --with-gnu-as \
+    --with-gnu-ld \
+    --without-headers \
+    --with-{gmp,mpfr,mpc,isl}=/usr \
+    --with-system-zlib \
+    CFLAGS="-O2 -pipe" \
+    CXXFLAGS="-O2 -pipe"
+
+  make all-gcc
+  make all-target-libgcc
+}
+
+package() {
+  cd ${srcdir}/gcc-build
+
+  make -j1 DESTDIR=${pkgdir} install-gcc
+  make -j1 DESTDIR=${pkgdir} install-target-libgcc
+
+  # Install libstdc++ headers from GCC source tree.
+  # We can't BUILD libstdc++ yet (needs msys2-runtime/cygwin1.dll),
+  # but the headers are arch-neutral templates needed to compile winsup.
+  _cxxdir=${pkgdir}/usr/lib/gcc/${_target}/${_realver}/include/c++
+  mkdir -p ${_cxxdir}/bits
+  cp -r ${srcdir}/${_realname}/libstdc++-v3/include/. ${_cxxdir}/
+
+  # Provide a minimal bits/c++config.h stub.
+  # This is intentionally minimal — it only needs to be sufficient to
+  # compile winsup (msys2-runtime). After msys2-runtime is built, a
+  # full gcc package will be built with real generated c++config.h.
+  cat > ${_cxxdir}/bits/c++config.h << 'CXXCONFIG'
+#ifndef _GLIBCXX_CXX_CONFIG_H
+#define _GLIBCXX_CXX_CONFIG_H 1
+#define __GLIBCXX__ 1
+#define _GLIBCXX_HAVE_ATTRIBUTE_VISIBILITY 1
+#define _GLIBCXX_VISIBILITY(V) __attribute__((__visibility__(#V)))
+#define _GLIBCXX_BEGIN_NAMESPACE_VERSION
+#define _GLIBCXX_END_NAMESPACE_VERSION
+#define _GLIBCXX_USE_C99_STDLIB 1
+#define _GLIBCXX_USE_C99_MATH 1
+#define _GLIBCXX_LONG_DOUBLE_COMPAT 0
+#define _GLIBCXX_USE_WCHAR_T 1
+#define _GLIBCXX_HAS_GTHREADS 1
+namespace std _GLIBCXX_VISIBILITY(default) {
+  typedef __SIZE_TYPE__    size_t;
+  typedef __PTRDIFF_TYPE__ ptrdiff_t;
+}
+#endif
+CXXCONFIG
+
+  # Remove any C header wrappers from libstdc++ that would shadow newlib headers.
+  # These wrappers assume a glibc environment and break newlib-based builds.
+  for f in fenv.h stdlib.h alloca.h unistd.h; do
+    _wrapper="${pkgdir}/usr/lib/gcc/${_target}/${_realver}/include/c++/${f}"
+    if [ -f "${_wrapper}" ]; then
+      mv "${_wrapper}" "${_wrapper}.bak"
+      echo "Moved shadowing header: ${f} → ${f}.bak"
+    fi
+  done
+
+  for _f in ${pkgdir}/usr/bin/*.exe; do
+    strip -s ${_f} 2>/dev/null || true
+  done
+  rm -rf ${pkgdir}/usr/share
+}
