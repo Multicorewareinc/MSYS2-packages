@@ -1,0 +1,69 @@
+# Maintainer: Windows on ARM Experiments
+
+_realname=binutils
+_target=aarch64-pc-msys
+_host=x86_64-pc-msys
+pkgname="cross-msysarm64-${_realname}"
+pkgver=2.44dev
+pkgrel=2
+pkgdesc="Cross binutils for target ${_target}"
+arch=('i686' 'x86_64')
+url="https://www.gnu.org/software/binutils/"
+license=('GPL')
+depends=("libiconv" "zlib" "libzstd" "libintl")
+makedepends=("libiconv-devel" "zlib-devel" 'autotools' 'gcc' 'libzstd-devel' 'gettext-devel' 'git' 'gmp-devel' 'mpfr-devel')
+options=('staticlibs' '!distcc' '!ccache' '!buildflags')
+source=("${_realname}"::"git+https://github.com/Windows-on-ARM-Experiments/binutils-woarm64.git#branch=woarm64"
+        0002-check-for-unusual-file-harder.patch
+        0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch
+        9999-workarounds.patch
+        9998-aarch64-pc-msys-target.patch)
+sha256sums=('SKIP'
+            '2c99345fc575c3a060d6677537f636c6c4154fac0fde508070f3b6296c1060d4'
+            '4e8ac055df61b1b5d6ae29dc87e1154737c2e87c7b244b44866702cabf1a5d18'
+            'SKIP'
+            'SKIP')
+
+apply_patch_with_msg() {
+  for _patch in "$@"; do
+    msg2 "Applying ${_patch}"
+    patch -p1 -i "${srcdir}/${_patch}"
+  done
+}
+
+prepare() {
+  cd ${srcdir}/binutils
+  apply_patch_with_msg \
+    0002-check-for-unusual-file-harder.patch \
+    0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch \
+    9999-workarounds.patch \
+    9998-aarch64-pc-msys-target.patch
+}
+
+build() {
+  mkdir -p ${srcdir}/binutils-build && cd ${srcdir}/binutils-build
+
+  ${srcdir}/binutils/configure \
+    --build=${_host} \
+    --host=${_host} \
+    --target=${_target} \
+    --prefix=/usr \
+    --disable-dependency-tracking \
+    --disable-werror \
+    --enable-lto \
+    --enable-64-bit-bfd \
+    --with-libiconv-prefix=/usr \
+    --with-system-zlib
+
+  make CFLAGS="-std=gnu17 -O2 -pipe"
+}
+
+package() {
+  cd ${srcdir}/binutils-build
+  make DESTDIR=${pkgdir} install
+  rm -rf "${pkgdir}/usr/share/info"
+  rm -rf "${pkgdir}/usr/share/locale"
+  rm -rf "${pkgdir}/usr/share/gdb"
+  rm -rf "${pkgdir}/usr/lib"
+  rm -rf "${pkgdir}/usr/include"
+}

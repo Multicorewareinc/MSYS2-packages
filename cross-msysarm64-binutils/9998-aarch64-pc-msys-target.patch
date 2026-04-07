@@ -1,0 +1,121 @@
+diff --git a/bfd/config.bfd b/bfd/config.bfd
+index d48d4e650ab..0277344279f 100644
+--- a/bfd/config.bfd
++++ b/bfd/config.bfd
+@@ -248,7 +248,7 @@ case "${targ}" in
+     targ_selvecs="aarch64_elf64_be_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_le_vec arm_elf32_be_vec aarch64_pei_le_vec aarch64_pe_le_vec"
+     want64=true
+     ;;
+-  aarch64-*-pe* | aarch64-*-mingw* | aarch64-*-cygwin*)
++  aarch64-*-pe* | aarch64-*-mingw* | aarch64-*-cygwin* | aarch64-*-msys*)
+     targ_defvec=aarch64_pe_le_vec
+     targ_selvecs="aarch64_pe_le_vec aarch64_pei_le_vec aarch64_pe_big_vec aarch64_elf64_le_vec aarch64_elf64_be_vec aarch64_elf32_le_vec aarch64_elf32_be_vec arm_elf32_le_vec arm_elf32_be_vec pdb_vec"
+     want64=true
+diff --git a/binutils/configure b/binutils/configure
+index 274ba2596ea..59704d5bd47 100755
+--- a/binutils/configure
++++ b/binutils/configure
+@@ -16419,7 +16419,7 @@ do
+     esac
+
+     case $targ in
+-    aarch64-*-mingw* | aarch64-*-cygwin*)
++    aarch64-*-mingw* | aarch64-*-cygwin* | aarch64-*-msys*)
+ 	BUILD_DLLTOOL='$(DLLTOOL_PROG)$(EXEEXT)'
+ 	if test -z "$DLLTOOL_DEFAULT"; then
+ 	    DLLTOOL_DEFAULT="-DDLLTOOL_DEFAULT_AARCH64"
+diff --git a/binutils/configure.ac b/binutils/configure.ac
+index b14a44dce38..1f73635bd7d 100644
+--- a/binutils/configure.ac
++++ b/binutils/configure.ac
+@@ -368,7 +368,7 @@ changequote([,])dnl
+     esac
+
+     case $targ in
+-    aarch64-*-mingw*| aarch64-*-cygwin* )
++    aarch64-*-mingw*| aarch64-*-cygwin* | aarch64-*-msys* )
+ 	BUILD_DLLTOOL='$(DLLTOOL_PROG)$(EXEEXT)'
+ 	if test -z "$DLLTOOL_DEFAULT"; then
+ 	    DLLTOOL_DEFAULT="-DDLLTOOL_DEFAULT_AARCH64"
+diff --git a/gas/configure.tgt b/gas/configure.tgt
+index f648e883f2d..cbd12fbd9b1 100644
+--- a/gas/configure.tgt
++++ b/gas/configure.tgt
+@@ -138,7 +138,7 @@ case ${generic_target} in
+   aarch64*-*-netbsd*)			fmt=elf em=nbsd;;
+   aarch64*-*-nto*)			fmt=elf;;
+   aarch64*-*-openbsd*)			fmt=elf;;
+-  aarch64*-*-pe* | aarch64*-*-mingw* | aarch64*-*-cygwin*)	fmt=coff em=pepaarch64 ;;
++  aarch64*-*-pe* | aarch64*-*-mingw* | aarch64*-*-cygwin* | aarch64*-*-msys*)	fmt=coff em=pepaarch64 ;;
+   alpha-*-*vms*)			fmt=evax ;;
+   alpha-*-osf*)				fmt=ecoff ;;
+   alpha-*-linux*ecoff*)			fmt=ecoff ;;
+diff --git a/ld/configure.tgt b/ld/configure.tgt
+index 61311209ac6..a1c7f0d19eb 100644
+--- a/ld/configure.tgt
++++ b/ld/configure.tgt
+@@ -127,7 +127,7 @@ aarch64-*-haiku*)	targ_emul=aarch64haiku
+ aarch64-*-nto*)		targ_emul=aarch64nto
+ 			targ_extra_emuls="aarch64elf aarch64elf32 aarch64elf32b aarch64elfb armelf armelfb"
+ 			;;
+-aarch64-*-pe* | aarch64-*-mingw* | aarch64-*-cygwin*)
+++aarch64-*-pe* | aarch64-*-mingw* | aarch64-*-cygwin* | aarch64-*-msys*)
+ 			targ_emul=aarch64pe
+ 			targ_extra_emuls=arm64pe
+ 			targ_extra_ofiles="deffilep.o pep-dll-aarch64.o pe-dll.o pdb.o"
+@@ -1141,7 +1141,7 @@ spu-*-elf*)
+   NATIVE_LIB_DIRS='/lib'
+   ;;
+
+-aarch64-*-cygwin* | i[03-9x]86-*-cygwin* | x86_64-*-cygwin*)
++aarch64-*-cygwin* | aarch64-*-msys* | i[03-9x]86-*-cygwin* | x86_64-*-cygwin*)
+   NATIVE_LIB_DIRS='/usr/lib /usr/lib/w32api'
+   ;;
+
+diff --git a/ld/emultempl/pe.em b/ld/emultempl/pe.em
+index c75e5aad618..7a80710ce62 100644
+--- a/ld/emultempl/pe.em
++++ b/ld/emultempl/pe.em
+@@ -7,6 +7,9 @@ else
+ fi
+
+ case ${target} in
++  aarch64-*-msys*)
++    cygwin_behavior=0;
++    ;;
+   aarch64-*-cygwin*)
+     cygwin_behavior=0;
+     ;;
+@@ -72,7 +75,7 @@ fragment <<EOF
+ EOF
+
+ case ${target} in
+-  aarch64-*-mingw* | aarch64-*-pe* | aarch64-*-cygwin | \
++  aarch64-*-mingw* | aarch64-*-pe* | aarch64-*-cygwin* | aarch64-*-msys* | \
+   x86_64-*-mingw* | x86_64-*-pe | x86_64-*-pep | x86_64-*-cygwin | \
+   i[3-7]86-*-mingw32* | i[3-7]86-*-cygwin* | i[3-7]86-*-winnt | i[3-7]86-*-pe)
+ fragment <<EOF
+diff --git a/ld/emultempl/pep.em b/ld/emultempl/pep.em
+index 4e2b899d744..074bce91015 100644
+--- a/ld/emultempl/pep.em
++++ b/ld/emultempl/pep.em
+@@ -7,6 +7,10 @@ else
+ fi
+
+ case ${target} in
++  aarch64-*-msys*)
++    move_default_addr_high=1
++    cygwin_behavior=0;
++    ;;
+   aarch64-*-cygwin*)
+     move_default_addr_high=1
+     cygwin_behavior=0;
+@@ -82,7 +86,7 @@ fragment <<EOF
+ EOF
+
+ case ${target} in
+-  aarch64-*-mingw* | aarch64-*-pe* | aarch64-*-cygwin | \
++  aarch64-*-mingw* | aarch64-*-pe* | aarch64-*-cygwin* | aarch64-*-msys* | \
+   x86_64-*-mingw* | x86_64-*-pe | x86_64-*-pep | x86_64-*-cygwin | \
+   i[3-7]86-*-mingw32* | i[3-7]86-*-cygwin* | i[3-7]86-*-winnt | i[3-7]86-*-pe)
+ fragment <<EOF
