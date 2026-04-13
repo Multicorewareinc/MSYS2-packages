@@ -192,12 +192,31 @@ build() {
   echo "newlib libm/ld/ long double files patched for aarch64"
 
   # Run autogen specifically for winsup
-  cd ${srcdir}/${_realname}/winsup
-  ./autogen.sh || autoreconf -fvi || true
+  # cd ${srcdir}/${_realname}/winsup
+  # ./autogen.sh || autoreconf -fvi || true
 
   mkdir -p ${srcdir}/runtime-build
   cd ${srcdir}/runtime-build
+  export CFLAGS="\
+  -nostdinc \
+  -D_MB_CAPABLE=1 \
+  -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include \
+  -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include-fixed \
+  -isystem /home/mcw/headers/aarch64-pc-msys/include \
+  -isystem /usr/aarch64-pc-msys/include \
+  -O1 -pipe"
 
+  export CXXFLAGS="\
+  -nostdinc \
+  -nostdinc++ \
+  -D_MB_CAPABLE=1 \
+  -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include \
+  -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include-fixed \
+  -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++ \
+  -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++/backward \
+  -isystem /home/mcw/headers/aarch64-pc-msys/include \
+  -isystem /usr/aarch64-pc-msys/include \
+  -O1 -pipe"
   CXXFLAGS_FOR_TARGET="-Wno-error -Wno-narrowing" \
   ${srcdir}/${_realname}/winsup/configure \
     --prefix=/usr \
@@ -223,26 +242,53 @@ build() {
     LD="${LD}" \
     MINGW_CXX=aarch64-w64-mingw32-g++ \
     MINGW_CC=aarch64-w64-mingw32-gcc \
-    CFLAGS="\
-    -nostdinc \
-    -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include \
-    -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include-fixed \
-    -isystem /home/mcw/headers/aarch64-pc-msys/include \
-    -isystem /usr/aarch64-pc-msys/include \
-    -O1 -pipe" \
-    CXXFLAGS="\
-    -nostdinc \
-    -nostdinc++ \
-    -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include \
-    -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include-fixed \
-    -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++ \
-    -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++/backward \
-    -isystem /home/mcw/headers/aarch64-pc-msys/include \
-    -isystem /usr/aarch64-pc-msys/include \
-    -O1 -pipe"
+    CFLAGS="${CFLAGS}" \
+    CXXFLAGS="${CXXFLAGS}"
 
+  # 🔍 MB_CAPABLE CHECK STARTS HERE
+  echo "Checking _MB_CAPABLE..."
 
+  cat > mb_check.c << 'EOF'
+#ifndef _MB_CAPABLE
+#error "_MB_CAPABLE is NOT defined"
+#endif
+int main() { return 0; }
+EOF
 
+  ${CC} ${CFLAGS} mb_check.c -o mb_check || {
+    echo "❌ MB_CAPABLE check failed"
+    exit 1
+  }
+
+  echo "✅ MB_CAPABLE is defined"
+  # 🔍 MB_CAPABLE CHECK ENDS HERE  
+
+  echo "Current directory: $(pwd)"
+  MAKEFILE="cygwin/Makefile"
+
+  # 1. Remove LIBSERVER rule block ONLY
+  awk '
+  BEGIN {skip=0}
+  /^\$\(LIBSERVER\):/ {skip=1; next}
+  skip && /^[^ \t]/ {skip=0}
+  !skip {print}
+  ' "$MAKEFILE" > tmp && mv tmp "$MAKEFILE"
+
+  # 2. Remove LIBSERVER from dependencies and link lines
+  sed -i 's/$(LIBSERVER)\\//g' "$MAKEFILE"
+  sed -i 's/$(LIBSERVER)//g' "$MAKEFILE"
+
+  # 3. Remove -mno-use-libstdc-wrappers
+  sed -i 's/-mno-use-libstdc-wrappers//g' "$MAKEFILE"
+
+  # 4. Clean broken "\" continuation lines
+  # remove lines that contain only "\" or whitespace + "\"
+  sed -i '/^[[:space:]]*\\[[:space:]]*$/d' "$MAKEFILE"
+
+  # 5. Fix accidental comment on LDSCRIPT (if happened earlier)
+  sed -i 's/^#\$(LDSCRIPT)/$(LDSCRIPT)/' "$MAKEFILE"
+
+  echo "Makefile clean patch applied"
   make -j$(nproc)
 }
 
@@ -273,4 +319,5 @@ package_msys2-runtime-devel() {
   rm -rf ${pkgdir}/usr/sbin
   rm -rf ${pkgdir}/usr/share
 }
+
 

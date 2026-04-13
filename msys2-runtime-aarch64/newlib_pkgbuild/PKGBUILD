@@ -158,7 +158,7 @@ CEOF
     echo "ERROR: register.h missing aarch64 — check source branch"
   # cp -rf ${srcdir}/${_realname}/winsup/cygwin/include/* \
   #       ${srcdir}/${_realname}/newlib/libc/include/
-
+  # cp -rf src/msys2-runtime/winsup/cygwin/include/* src/msys2-runtime/newlib/libc/include/
   # --- Run autogen from TOP-LEVEL ---
   # We need top-level autogen because we're using top-level configure.
   # winsup/autogen.sh only regenerates winsup/configure — we need the
@@ -168,6 +168,9 @@ CEOF
 }
 
 build() {
+  export ac_cv_header_rpc_xdr_h=yes
+  export ac_cv_func_xdrmem_create=yes
+  export newlib_cv_xdr_dir=yes
   unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
   # Do NOT export CC/CXX here — let configure use native gcc for host tools
   # and CC_FOR_TARGET for building target libraries (newlib, winsup)
@@ -191,8 +194,9 @@ export CFLAGS="\
 -isystem ${GCC_BASE}/include \
 -isystem ${GCC_BASE}/include-fixed \
 -isystem ${SYSROOT_INC} \
+-D_MB_CAPABLE=1 \
 "
-
+  
   export CPPFLAGS="$CFLAGS"
   export CFLAGS_FOR_TARGET="$CFLAGS"
   export CPPFLAGS_FOR_TARGET="$CFLAGS"
@@ -251,8 +255,26 @@ export CFLAGS="\
     STRIP_FOR_TARGET="aarch64-pc-msys-strip" \
     MINGW_CXX=aarch64-w64-mingw32-g++ \
     MINGW_CC=aarch64-w64-mingw32-gcc  \
-    CFLAGS="-O2 -pipe" \
-    CXXFLAGS="-O2 -pipe"
+    CFLAGS="-O2 -pipe -D_MB_CAPABLE=1" \
+    CXXFLAGS="-O2 -pipe -D_MB_CAPABLE=1"
+
+      # 🔍 MB_CAPABLE CHECK STARTS HERE
+  echo "Checking _MB_CAPABLE..."
+
+  cat > mb_check.c << 'EOF'
+#ifndef _MB_CAPABLE
+#error "_MB_CAPABLE is NOT defined"
+#endif
+int main() { return 0; }
+EOF
+
+  ${CC} ${CFLAGS} mb_check.c -o mb_check || {
+    echo "❌ MB_CAPABLE check failed"
+    exit 1
+  }
+
+  echo "✅ MB_CAPABLE is defined"
+  # 🔍 MB_CAPABLE CHECK ENDS HERE  
   make -j$(nproc)
 }
 
