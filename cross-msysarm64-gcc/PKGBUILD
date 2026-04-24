@@ -1,0 +1,216 @@
+# Maintainer: Windows on ARM Experiments
+
+_realname=gcc
+_target=aarch64-pc-msys
+pkgname="cross-msysarm64-${_realname}"
+pkgver=15.0.1
+pkgrel=1
+pkgdesc="Cross GCC stage2 for aarch64-pc-msys (with full runtime)"
+arch=('i686' 'x86_64')
+url="https://gcc.gnu.org"
+license=('GPL' 'LGPL' 'FDL')
+depends=("zlib" "mpc" "isl" "libzstd")
+makedepends=(
+  "gcc"
+  "lndir"
+  "gmp-devel"
+  "mpc-devel"
+  "zlib-devel"
+  "isl-devel"
+  "autotools"
+  "gperf"
+  "libzstd-devel"
+  "cross-msysarm64-binutils"
+  "cross-msysarm64-gcc-stage1"      # stage1 compiler
+  "cross-msysarm64-runtime-devel"   # real msys2-runtime headers + libcygwin.a
+  "cross-msysarm64-w32api-headers"
+  "git"
+)
+options=('!strip' 'staticlibs' '!emptydirs' '!buildflags')
+source=(
+  "${_realname}::git+https://github.com/Windows-on-ARM-Experiments/gcc-woarm64.git#branch=fix-va-list"
+  0012-Handle-spaces-in-path-for-default-manifest.patch
+  0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch
+  0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch
+  9998-aarch64-pc-msys-target.patch
+)
+sha256sums=(
+  'SKIP'
+  'e98805ead7d78ee2a92f237894c4b2b7ddc1688e1b517d8c04f28d440202e40f'
+  'fd9bdecb2bbc4796bbc9f00b708dac42ef9e3464a06d6d27e5475cee117de5be'
+  'ad1f7b5e7afaaec008b7cbd14feea13a10989fa91bda7003af72d457619bb199'
+  'SKIP'
+)
+
+apply_patch_with_msg() {
+  for _fname in "$@"; do
+    msg2 "Applying ${_fname}"
+    patch -Nbp1 -i "${srcdir}"/${_fname}
+  done
+}
+
+prepare() {
+  cd ${srcdir}/${_realname}
+
+#   apply_patch_with_msg \
+#     0012-Handle-spaces-in-path-for-default-manifest.patch \
+#     0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch \
+#     0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch \
+#     9998-aarch64-pc-msys-target.patch
+
+  # --- Verify stage1 compiler is present ---
+  echo "--- Stage2 prerequisite check ---"
+  which aarch64-pc-msys-gcc || {
+    echo "FATAL: aarch64-pc-msys-gcc not found — install cross-msysarm64-gcc-stage1"
+    exit 1
+  }
+
+  # --- Verify real msys2-runtime is installed (not the stub) ---
+  # libcygwin.a must be non-empty (stage1 stub was empty)
+  _libcygwin=/usr/aarch64-pc-msys/lib/libcygwin.a
+  if [ ! -f "${_libcygwin}" ]; then
+    echo "FATAL: libcygwin.a missing — install msys2-runtime-devel"
+    exit 1
+  fi
+  _size=$(stat -c%s "${_libcygwin}")
+  if [ "${_size}" -lt 1024 ]; then
+    echo "FATAL: libcygwin.a is too small (${_size} bytes) — looks like the stub."
+    echo "       Install the real msys2-runtime-devel package first."
+    exit 1
+  fi
+  echo "libcygwin.a OK (${_size} bytes)"
+
+  # --- Verify crt0.o is the real one ---
+  _crt0=/usr/aarch64-pc-msys/lib/crt0.o
+  _crt0size=$(stat -c%s "${_crt0}" 2>/dev/null || echo 0)
+  if [ "${_crt0size}" -lt 512 ]; then
+    echo "WARNING: crt0.o may still be the bootstrap stub (${_crt0size} bytes)"
+    echo "         Make sure msys2-runtime-devel installed the real crt0.o"
+  else
+    echo "crt0.o OK (${_crt0size} bytes)"
+  fi
+
+  # --- Verify key headers ---
+  [ -f /usr/aarch64-pc-msys/include/stdio.h ] && \
+    echo "stdio.h OK" || \
+    echo "WARNING: stdio.h missing from sysroot"
+  grep -q "__aarch64__" /usr/aarch64-pc-msys/include/cygwin/signal.h 2>/dev/null && \
+    echo "signal.h aarch64 patch OK" || \
+    echo "WARNING: signal.h missing aarch64 defines"
+}
+
+build() {
+  export lt_cv_deplibs_check_method='pass_all'
+
+  mkdir -p ${srcdir}/gcc-build && cd ${srcdir}/gcc-build
+
+  # Use the stage1 compiler to build stage2
+  export CC_FOR_BUILD=gcc
+  export CXX_FOR_BUILD=g++
+
+  ../${_realname}/configure \
+    --prefix=/usr \
+    --build=x86_64-pc-msys \
+    --host=x86_64-pc-msys \
+    --target=${_target} \
+    --with-sysroot=/usr/${_target} \
+    --with-arch=armv8-a \
+    --with-tune=cortex-a53 \
+    --enable-languages=c,c++,lto \
+    --enable-shared-libgcc \
+    --enable-version-specific-runtime-libs \
+    --disable-__cxa_atexit \
+    --enable-threads=posix \
+    --enable-graphite \
+    --enable-libatomic \
+    --enable-libgomp \
+    --enable-libquadmath \
+    --enable-libquadmath-support \
+    --enable-libstdcxx-filesystem-ts \
+    --disable-libssp \
+    --disable-symvers \
+    --with-gcc-major-version-only \
+    --with-dwarf2 \
+    --with-system-zlib \
+    --with-default-libstdcxx-abi=gcc4-compatible \
+    --without-libiconv-prefix \
+    --without-libintl-prefix \
+    --disable-bootstrap \
+    --disable-multilib \
+    --disable-plugins \
+    --disable-nls \
+    --disable-werror \
+    --with-gnu-as \
+    --with-gnu-ld \
+    --with-{gmp,mpfr,mpc,isl}=/usr \
+    CFLAGS="-O0 -pipe" \
+    CXXFLAGS="-O0 -pipe" \
+    CFLAGS_FOR_TARGET="-O0 -pipe" \
+    CXXFLAGS_FOR_TARGET="-O0 -pipe"
+
+  make all-gcc
+
+  # Fix 1: configure libgcc target to generate its Makefile, then patch it
+  # before actually building. We do this by running just the configure step.
+  _libgcc_mf="${srcdir}/gcc-build/aarch64-pc-msys/libgcc/Makefile"
+  if [ ! -f "${_libgcc_mf}" ]; then
+    # Trigger libgcc configure without building
+    make configure-target-libgcc
+  fi
+
+  # Now patch LIB2ADDEH — line 347 is the DW2 assignment, 348 is continuation
+  echo "--- Patching LIB2ADDEH to use SEH unwinder ---"
+  sed -n '345,352p' "${_libgcc_mf}"  # show before
+  sed -i '347s|.*|LIB2ADDEH = $(srcdir)/unwind-seh.c $(srcdir)/unwind-sjlj.c $(srcdir)/unwind-c.c|' \
+    "${_libgcc_mf}"
+  sed -i '348d' "${_libgcc_mf}"
+  grep "^LIB2ADDEH" "${_libgcc_mf}"  # verify
+
+  make all-target-libgcc
+
+  # Fix 2: merge EH objects into libgcc.a so -lgcc finds _Unwind_*
+  _libgcc_dir="${srcdir}/gcc-build/aarch64-pc-msys/libgcc"
+  pushd "${_libgcc_dir}"
+  aarch64-pc-msys-ar x libgcc_eh.a unwind-seh.o unwind-sjlj.o unwind-c.o
+  aarch64-pc-msys-ar rcs libgcc.a unwind-seh.o unwind-sjlj.o unwind-c.o
+  aarch64-pc-msys-ar rcs "${srcdir}/gcc-build/gcc/libgcc.a" \
+    unwind-seh.o unwind-sjlj.o unwind-c.o
+  popd
+
+  # Fix 3: patch libstdc++ libtool postdeps ordering — kernel32 lands before
+  # lgcc so unwind-seh.o's __imp_Rtl* refs are unresolved. Patch GLIBCXX_LIBS
+  # and touch libstdc++.la after manual link if needed.
+  # configure-target-libstdc++-v3 generates the libtool script
+  make configure-target-libstdc++-v3 || true
+  _libtool="${srcdir}/gcc-build/aarch64-pc-msys/libstdc++-v3/libtool"
+  _libstdcxx_mf="${srcdir}/gcc-build/aarch64-pc-msys/libstdc++-v3/src/Makefile"
+
+  # Patch GLIBCXX_LIBS to add kernel32 after lgcc via start-group in libtool
+  # Since libtool rejects -Wl flags in postdeps, we patch archive_cmds instead
+  sed -i \
+    "s|postdeps=\" -lgcc -lcygwin -ladvapi32 -lshell32 -luser32 -lkernel32 -lgcc \"|postdeps=\" -lgcc -lcygwin -ladvapi32 -lshell32 -luser32 -lkernel32 -lgcc \"\npostdep_objects=\"\${postdep_objects} /usr/aarch64-pc-msys/lib/libkernel32.a\"|" \
+    "${_libtool}" || true
+
+  make all-target-libstdc++-v3
+
+  make all-target-libgomp   || echo "WARNING: libgomp failed"
+  make all-target-libatomic || echo "WARNING: libatomic failed"
+
+}
+package() {
+ cd ${srcdir}/gcc-build
+
+  make -j1 DESTDIR=${pkgdir} install-gcc
+  make -j1 DESTDIR=${pkgdir} install-target-libgcc
+  make -j1 DESTDIR=${pkgdir} install-target-libstdc++-v3
+  make -j1 DESTDIR=${pkgdir} install-target-libgomp   || true
+  make -j1 DESTDIR=${pkgdir} install-target-libatomic || true
+
+ # Remove info/man pages — not needed in cross toolchain
+  rm -rf ${pkgdir}/usr/share
+
+  # Strip host binaries (the cross-compiler executables themselves)
+  find ${pkgdir}/usr/bin -name "*.exe" -exec strip -s {} \; 2>/dev/null || true
+
+#   # Do NOT strip target libraries — they need relocs for the target
+}
