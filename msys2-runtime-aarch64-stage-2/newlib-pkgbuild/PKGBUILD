@@ -1,0 +1,310 @@
+# Maintainer: Windows on ARM Experiments
+_realname=msys2-runtime
+pkgbase=${_realname}
+pkgname=(${_realname} ${_realname}-devel)
+pkgver=3.6.7
+pkgrel=4
+pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-msys"
+arch=('x86_64')
+options=('!strip' '!buildflags')
+url="https://cygwin.com"
+license=('GPL')
+makedepends=(
+  "cross-msysarm64-gcc-stage1"        # provides: aarch64-pc-msys-gcc, libgcc.a, crtbegin/end.o
+  "cross-msysarm64-binutils"          # provides: aarch64-pc-msys-ld, ar, etc.
+  "cross-msysarm64-w32api-headers"    # provides: sysroot/include/w32api/*.h
+  "cross-msysarm64-runtime-devel"     # provides: sysroot/include/ (newlib + cygwin headers)
+  "mingw-w64-cross-mingwarm64-gcc"    # provides: aarch64-w64-mingw32-g++ for mingw helper
+  "mingw-w64-cross-mingwarm64-crt"    # provides: /opt/aarch64-w64-mingw32/lib/
+  "mingw-w64-cross-mingwarm64-zlib"   # provides: /opt/aarch64-w64-mingw32/lib/libz.a
+  "cocom"                             # provides: osfmk tool for mach interface generation
+  "git"
+  "autotools"
+)
+source=(
+  "${_realname}::git+https://github.com/aswin-mcw/msys2-runtime#branch=mcw/aarch64-port"
+)
+sha256sums=('SKIP')
+
+_target=aarch64-pc-msys
+_build=x86_64-pc-msys
+
+prepare() {
+  # -------------------------------------------------------------------------
+  # BOOTSTRAP STUBS
+  # We only stub things that ARE what we're building (circular deps).
+  # Everything else must come from real dependency packages.
+  #
+  # Compare with Cygwin's build-cygwin.sh stage1:
+  #   - Headers already installed by install-cygwin-headers.sh
+  #   - Win32 libs already installed by build-mingw-crt.sh --enable-w32api
+  #   - GCC stage1 already built → libgcc.a, crtbegin/end.o available
+  #   - Only crt0.o and libcygwin.a are stubbed (they ARE the build output)
+  # -------------------------------------------------------------------------
+
+  # echo "" > /tmp/empty.c
+
+  # --- Stub: crt0.o ---
+  # Circular dep: crt0.o is produced by msys2-runtime, needed to link anything.
+  # We provide a minimal stub that satisfies the linker during bootstrap.
+  # The -c flag means compile-only (no link), so no circular dep here.
+#   cat > /tmp/crt0_stub.c << 'CEOF'
+# /* Bootstrap stub for crt0.o — replaced after msys2-runtime is built */
+# void __main(void) {}
+# void _start(void) {}
+# void mainCRTStartup(void) {}
+# void wmainCRTStartup(void) {}
+# CEOF
+#   /usr/bin/aarch64-pc-msys-gcc -c /tmp/crt0_stub.c \
+#     -o /usr/aarch64-pc-msys/lib/crt0.o
+#   echo "crt0.o stub installed"
+
+#   # --- Stub: default-manifest.o ---
+#   # Needed by the linker for PE manifests, not part of cygwin1.dll itself.
+#   /usr/bin/aarch64-pc-msys-gcc -c /tmp/empty.c \
+#     -o /usr/aarch64-pc-msys/lib/default-manifest.o
+#   echo "default-manifest.o stub installed"
+
+#   # --- Stub: libcygwin.a ---
+#   # Circular dep: libcygwin.a IS what we're building.
+#   # Empty stub to allow linking during stage1 bootstrap.
+#   /usr/bin/aarch64-pc-msys-gcc -c /tmp/empty.c -o /tmp/empty.o
+#   /usr/bin/aarch64-pc-msys-ar rcs \
+#     /usr/aarch64-pc-msys/lib/libcygwin.a /tmp/empty.o
+#   echo "libcygwin.a empty stub installed"
+
+#   # --- Real: crtbegin.o / crtend.o ---
+#   # These come from libgcc (cross-msysarm64-gcc-stage1), NOT stubs.
+#   cp /usr/lib/gcc/aarch64-pc-msys/15.0.1/crtbegin.o \
+#     /usr/aarch64-pc-msys/lib/crtbegin.o
+#   cp /usr/lib/gcc/aarch64-pc-msys/15.0.1/crtend.o \
+#     /usr/aarch64-pc-msys/lib/crtend.o
+#   echo "crtbegin.o / crtend.o from libgcc installed"
+
+#   # --- Real: libgcc.a ---
+#   # From cross-msysarm64-gcc-stage1. Copy to sysroot/lib for linker discovery.
+#   cp /usr/lib/gcc/aarch64-pc-msys/15.0.1/libgcc.a \
+#     /usr/aarch64-pc-msys/lib/libgcc.a
+#   echo "libgcc.a from gcc-stage1 installed"
+
+  sed -i '1s/^/#pragma GCC optimize("O0")\n/' \
+    ${srcdir}/${_realname}/winsup/cygwin/devices.cc
+  echo "devices.cc ICE workaround applied"
+
+  # mkdir -p ${srcdir}/${_realname}/winsup/cygwin/aarch64
+  # cp ${startdir}/winsup/cygwin/aarch64/fastcwd.cc \
+  #    ${srcdir}/${_realname}/winsup/cygwin/aarch64/fastcwd.cc
+  # echo "aarch64/fastcwd.cc injected from startdir"
+
+  # --- Real: Win32 import libs ---
+  # These come from cross-msysarm64-crt (--enable-w32api build).
+  # They should already be in /usr/aarch64-pc-msys/lib/w32api/ with symlinks.
+  # Just verify here — do NOT stub these, stubs will break the link.
+  echo "--- Verifying Win32 import libs from cross-msysarm64-crt ---"
+  _ok=1
+  for lib in kernel32 user32 advapi32 shell32 ntdll; do
+    if [ -f /usr/aarch64-pc-msys/lib/lib${lib}.a ]; then
+      echo "  lib${lib}.a OK"
+    else
+      echo "  ERROR: lib${lib}.a MISSING — cross-msysarm64-crt not installed correctly"
+      _ok=0
+    fi
+  done
+  if [ $_ok -ne 1 ]; then
+    echo "FATAL: Missing Win32 import libs. Install cross-msysarm64-crt first."
+    exit 1
+  fi
+
+  # --- libstdc++ header shadow removal ---
+  # libstdc++ wrappers for C headers shadow newlib headers in the sysroot.
+  # Remove them so winsup sees newlib's versions, not glibc-oriented wrappers.
+  # for f in fenv.h stdlib.h alloca.h unistd.h; do
+  #   _wrapper="/usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++/${f}"
+  #   if [ -f "${_wrapper}" ] && [ ! -f "${_wrapper}.bak" ]; then
+  #     mv "${_wrapper}" "${_wrapper}.bak"
+  #     echo "Moved shadowing header: ${f}"
+  #   fi
+  # done
+
+  # --- Headers: newlib + cygwin ---
+  # These should already be in sysroot from cross-msysarm64-runtime-devel.
+  # Refresh them from source to ensure they're the aarch64-patched versions.
+  echo "--- Installing headers from source ---"
+
+  # # newlib first (base layer)
+  # cp -rf ${srcdir}/${_realname}/newlib/libc/include/. \
+  #   /usr/aarch64-pc-msys/sys-include/
+  cp -rf ${srcdir}/${_realname}/newlib/libc/include/* \
+    /usr/aarch64-pc-msys/include/
+
+  # # cygwin headers second (override layer)
+  # cp -rf ${srcdir}/${_realname}/winsup/cygwin/include/. \
+  #   /usr/aarch64-pc-msys/sys-include/
+  # mkdir -p /usr/aarch64-pc-msys/include/cygwin
+
+  cp -r ${srcdir}/${_realname}/winsup/cygwin/include/* \
+        /usr/aarch64-pc-msys/include/
+
+  # --- Verify aarch64-specific patches are present ---
+  echo "--- Header patch verification ---"
+  grep -c "__aarch64__" \
+    /usr/aarch64-pc-msys/sys-include/cygwin/signal.h && \
+    echo "signal.h aarch64 patch OK" || \
+    echo "ERROR: signal.h missing aarch64 — check mcw/aarch64-winsup-sync branch"
+
+  grep -c "aarch64" \
+    ${srcdir}/${_realname}/winsup/cygwin/local_includes/register.h && \
+    echo "register.h aarch64 patch OK" || \
+    echo "ERROR: register.h missing aarch64 — check source branch"
+  # cp -rf ${srcdir}/${_realname}/winsup/cygwin/include/* \
+  #       ${srcdir}/${_realname}/newlib/libc/include/
+  # cp -rf src/msys2-runtime/winsup/cygwin/include/* src/msys2-runtime/newlib/libc/include/
+  # --- Run autogen from TOP-LEVEL ---
+  # We need top-level autogen because we're using top-level configure.
+  # winsup/autogen.sh only regenerates winsup/configure — we need the
+  # top-level configure to be regenerated too if it's stale.
+  cd ${srcdir}/${_realname}/winsup
+  ./autogen.sh || autoreconf -fvi || true
+}
+
+build() {
+  export ac_cv_header_rpc_xdr_h=yes
+  export ac_cv_func_xdrmem_create=yes
+  export newlib_cv_xdr_dir=yes
+  unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
+  # Do NOT export CC/CXX here — let configure use native gcc for host tools
+  # and CC_FOR_TARGET for building target libraries (newlib, winsup)
+  export CONFIG_SITE=/dev/null
+  export CCACHE_DISABLE=1
+  export PATH="/opt/bin:/usr/local/bin:/usr/bin:/bin"
+
+  which aarch64-w64-mingw32-g++ || \
+    echo "WARNING: mingw aarch64 g++ not found"
+
+  mkdir -p ${srcdir}/runtime-build
+  cd ${srcdir}/runtime-build
+  GCC_VER=15
+  GCC_BASE=/usr/lib/gcc/aarch64-pc-msys/${GCC_VER}
+
+  # Sysroot-style include (merged newlib + cygwin)
+  SYSROOT_INC=/usr/aarch64-pc-msys/include
+
+export CFLAGS="\
+-nostdinc \
+-isystem ${GCC_BASE}/include \
+-isystem ${GCC_BASE}/include-fixed \
+-isystem ${SYSROOT_INC} \
+-D_MB_CAPABLE=1 \
+"
+  
+  export CPPFLAGS="$CFLAGS"
+  export CFLAGS_FOR_TARGET="$CFLAGS"
+  export CPPFLAGS_FOR_TARGET="$CFLAGS"
+
+  # GCC_VER=15.0.1
+  # GCC_BASE=/usr/lib/gcc/aarch64-pc-msys/${GCC_VER}
+
+  # SYSROOT_INC=/home/mcw/headers/aarch64-pc-msys/include
+
+  # export CFLAGS="\
+  # -nostdinc \
+  # -isystem ${SYSROOT_INC} \
+  # -isystem ${GCC_BASE}/include \
+  # -isystem ${GCC_BASE}/include-fixed \
+  # "
+
+  # export CPPFLAGS="$CFLAGS"
+  # export CFLAGS_FOR_TARGET="$CFLAGS"
+  # export CPPFLAGS_FOR_TARGET="$CFLAGS"
+  CXXFLAGS_FOR_TARGET="-Wno-error -Wno-narrowing" \
+  ${srcdir}/${_realname}/configure \
+    --prefix=/usr \
+    --build=${_build} \
+    --host=${_build} \
+    --target=${_target} \
+    --with-cross-bootstrap \
+    --disable-libgloss \
+    --enable-shared \
+    --enable-static \
+    --disable-doc \
+    --disable-dumper \
+    --disable-cygserver \
+    --disable-utils \
+    --without-mingw-progs \
+    --without-headers \
+    CC="gcc" \
+    CXX="g++" \
+    AR="ar" \
+    RANLIB="ranlib" \
+    NM="nm" \
+    OBJDUMP="objdump" \
+    STRIP="strip" \
+    CC_FOR_TARGET="aarch64-pc-msys-gcc" \
+    CXX_FOR_TARGET="aarch64-pc-msys-g++" \
+    GCC_FOR_TARGET="aarch64-pc-msys-gcc" \
+    AR_FOR_TARGET="aarch64-pc-msys-ar" \
+    RANLIB_FOR_TARGET="aarch64-pc-msys-ranlib" \
+    NM_FOR_TARGET="aarch64-pc-msys-nm" \
+    OBJCOPY_FOR_TARGET="aarch64-pc-msys-objcopy" \
+    OBJDUMP_FOR_TARGET="aarch64-pc-msys-objdump" \
+    DLLTOOL_FOR_TARGET="aarch64-pc-msys-dlltool" \
+    WINDRES_FOR_TARGET="aarch64-pc-msys-windres" \
+    WINDMC_FOR_TARGET="aarch64-pc-msys-windmc" \
+    LD_FOR_TARGET="aarch64-pc-msys-ld" \
+    AS_FOR_TARGET="aarch64-pc-msys-as" \
+    STRIP_FOR_TARGET="aarch64-pc-msys-strip" \
+    MINGW_CXX=aarch64-w64-mingw32-g++ \
+    MINGW_CC=aarch64-w64-mingw32-gcc  \
+    CFLAGS="-O2 -pipe -D_MB_CAPABLE=1" \
+    CXXFLAGS="-O2 -pipe -D_MB_CAPABLE=1"
+
+      # 🔍 MB_CAPABLE CHECK STARTS HERE
+  echo "Checking _MB_CAPABLE..."
+
+  cat > mb_check.c << 'EOF'
+#ifndef _MB_CAPABLE
+#error "_MB_CAPABLE is NOT defined"
+#endif
+int main() { return 0; }
+EOF
+
+  ${CC} ${CFLAGS} mb_check.c -o mb_check || {
+    echo "❌ MB_CAPABLE check failed"
+    exit 1
+  }
+
+  echo "✅ MB_CAPABLE is defined"
+  # 🔍 MB_CAPABLE CHECK ENDS HERE  
+  make -j$(nproc)
+}
+
+
+
+
+package_msys2-runtime() {
+  pkgdesc="Cygwin POSIX emulation engine (aarch64-pc-msys)"
+  conflicts=('catgets' 'libcatgets')
+  replaces=('catgets' 'libcatgets')
+
+  cd ${srcdir}/runtime-build
+  make DESTDIR=${pkgdir} install
+
+  # Runtime package: DLL only, no headers or import libs
+  rm -rf ${pkgdir}/usr/include
+  rm -rf ${pkgdir}/usr/lib
+}
+
+package_msys2-runtime-devel() {
+  pkgdesc="Headers and import lib for msys2-runtime (aarch64-pc-msys)"
+  depends=("msys2-runtime=${pkgver}")
+  conflicts=('catgets-devel' 'libcatgets-devel')
+  replaces=('catgets-devel' 'libcatgets-devel')
+
+  cd ${srcdir}/runtime-build
+  make DESTDIR=${pkgdir} install
+
+  # Devel package: headers + import libs only, no DLL or executables
+  rm -rf ${pkgdir}/usr/bin
+  rm -rf ${pkgdir}/usr/sbin
+  rm -rf ${pkgdir}/usr/share
+}
