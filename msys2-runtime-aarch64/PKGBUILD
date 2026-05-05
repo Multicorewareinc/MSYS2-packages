@@ -23,7 +23,7 @@ makedepends=(
   "autotools"
 )
 source=(
-  "${_realname}::git+https://github.com/aswin-mcw/msys2-runtime#branch=mcw/aarch64-port"
+  "${_realname}::git+https://github.com/Multicorewareinc/msys2-runtime#branch=mcw/aarch64-port"
 )
 sha256sums=('SKIP')
 
