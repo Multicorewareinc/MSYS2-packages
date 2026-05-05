@@ -1,4 +1,4 @@
-!/bin/bash
+# #!/bin/bash
 set -e  # stop if any command fails
 
 ROOT_DIR=$(pwd)
@@ -30,7 +30,7 @@ echo "===== NEWLIB BUILD DONE ====="
 echo "===== STEP 2: Building WINSUP (msys2-runtime) ====="
 cd "$ROOT_DIR"
 
-# # Clean + build
+# Clean + build
 cp -rf newlib_pkgbuild/msys2-runtime/ .
 cp -rf newlib_pkgbuild/pkg/ .
 cp -rf newlib_pkgbuild/src/ .
