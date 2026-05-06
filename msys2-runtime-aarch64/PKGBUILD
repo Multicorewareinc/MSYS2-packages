@@ -245,6 +245,54 @@ build() {
     CFLAGS="${CFLAGS}" \
     CXXFLAGS="${CXXFLAGS}"
 
+sed -i '/-mno-use-libstdc-wrappers/d' cygwin/Makefile
+cat >> cygwin/Makefile << 'EOF'
+
+# netdrive.cc ICE workaround: strip problematic flags, compile at -O0
+fhandler/netdrive.o: CXXFLAGS := $(filter-out -O% -ftracer -fmerge-constants -Werror -Wall -Wstrict-aliasing,$(CXXFLAGS)) \
+  -O0 -fno-merge-constants \
+  -fno-exceptions -fno-rtti -fno-use-cxa-atexit -fno-threadsafe-statics
+
+fhandler/netdrive.o: AM_CXXFLAGS :=
+EOF
+cd cygwin
+make child_info_magic.h shared_info_magic.h globals.h localtime.patched.c stamp-h1 config.h
+cd ../
+cd cygserver  
+make -j$(nproc) OBJEXT=o
+cd ../
+sed -i '/^\$(LIBSERVER):/,/libcygserver\.a/c\
+LIBSERVER = /home/mcw/MSYS2-packages/msys2-runtime-aarch64/src/runtime-build/cygserver/libcygserver.a
+' cygwin/Makefile
+sed -i '/-mno-use-libstdc-wrappers/d' cygwin/Makefile
+cd cygwin 
+
+aarch64-pc-msys-g++ -DHAVE_CONFIG_H \
+-I. \
+-I/home/mcw/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/winsup/cygwin \
+-U_FORTIFY_SOURCE \
+-I/home/mcw/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/winsup/cygwin/local_includes \
+-I/home/mcw/MSYS2-packages/msys2-runtime-aarch64/src/winsup/cygwin \
+-isystem /home/mcw/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/winsup/cygwin/include \
+-isystem /home/mcw/MSYS2-packages/msys2-runtime-aarch64/src/newlib/targ-include \
+-isystem /home/mcw/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/newlib/libc/include \
+-fno-rtti -fno-exceptions -fno-use-cxa-atexit \
+-fno-threadsafe-statics \
+-nostdinc -nostdinc++ \
+-D_MB_CAPABLE=1 \
+-isystem /usr/lib/gcc/aarch64-pc-msys/15/include \
+-isystem /usr/lib/gcc/aarch64-pc-msys/15/include-fixed \
+-isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++ \
+-isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++/backward \
+-isystem /home/mcw/headers/aarch64-pc-msys/include \
+-isystem /usr/aarch64-pc-msys/include \
+-fno-merge-constants \
+-O0 \
+-MT msys2_path_conv.o -MD -MP -MF /tmp/msys2_path_conv.Tpo \
+-c -o msys2_path_conv.o \
+/home/mcw/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/winsup/cygwin/msys2_path_conv.cc
+
+touch msys2_path_conv.o
   # 🔍 MB_CAPABLE CHECK STARTS HERE
   echo "Checking _MB_CAPABLE..."
 
@@ -266,30 +314,8 @@ EOF
   echo "Current directory: $(pwd)"
   MAKEFILE="cygwin/Makefile"
 
-  # 1. Remove LIBSERVER rule block ONLY
-  awk '
-  BEGIN {skip=0}
-  /^\$\(LIBSERVER\):/ {skip=1; next}
-  skip && /^[^ \t]/ {skip=0}
-  !skip {print}
-  ' "$MAKEFILE" > tmp && mv tmp "$MAKEFILE"
-
-  # 2. Remove LIBSERVER from dependencies and link lines
-  sed -i 's/$(LIBSERVER)\\//g' "$MAKEFILE"
-  sed -i 's/$(LIBSERVER)//g' "$MAKEFILE"
-
-  # 3. Remove -mno-use-libstdc-wrappers
-  sed -i 's/-mno-use-libstdc-wrappers//g' "$MAKEFILE"
-
-  # 4. Clean broken "\" continuation lines
-  # remove lines that contain only "\" or whitespace + "\"
-  sed -i '/^[[:space:]]*\\[[:space:]]*$/d' "$MAKEFILE"
-
-  # 5. Fix accidental comment on LDSCRIPT (if happened earlier)
-  sed -i 's/^#\$(LDSCRIPT)/$(LDSCRIPT)/' "$MAKEFILE"
-
   echo "Makefile clean patch applied"
-  make -j$(nproc)
+  make -j$(nproc) OBJEXT=o
 }
 
 package_msys2-runtime() {
