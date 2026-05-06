@@ -12,10 +12,10 @@ index 7451226f6ac..098b48f0158 100644
      build_exeext=.exe
      ;;
 diff --git a/gcc/config.gcc b/gcc/config.gcc
-index 008a7606782..13f6cab094d 100644
+index 008a7606782..61164605c5f 100644
 --- a/gcc/config.gcc
 +++ b/gcc/config.gcc
-@@ -1275,6 +1275,36 @@ aarch64*-*-gnu*)
+@@ -1275,6 +1275,37 @@ aarch64*-*-gnu*)
          tmake_file="${tmake_file} aarch64/t-aarch64"
          tm_defines="${tm_defines}  TARGET_DEFAULT_ASYNC_UNWIND_TABLES=1"
  	;;
@@ -24,6 +24,7 @@ index 008a7606782..13f6cab094d 100644
 +	tm_file="${tm_file} aarch64/aarch64-coff.h"
 +	tm_file="${tm_file} aarch64/cygming.h"
 +	tm_file="${tm_file} i386/cygwin.h"
++	tm_file="${tm_file} aarch64/msys.h"
 +	tm_file="${tm_file} i386/cygwin-w64.h"
 +	tm_file="${tm_file} i386/cygwin-stdint.h"
 +	tm_file="${tm_file} mingw/winnt.h"
@@ -98,3 +99,354 @@ index 0ae68b669f1..3981ae22dc7 100644
  aarch64-*-cygwin*)
  	# This has to match the logic for DWARF2_UNWIND_INFO in gcc/config/aarch64/cygming.h
  	if test x$ac_cv_sjlj_exceptions = xyes; then
+diff --git a/libstdc++-v3/configure b/libstdc++-v3/configure
+index 9d26248a78a..c102649135b 100755
+--- a/libstdc++-v3/configure
++++ b/libstdc++-v3/configure
+@@ -6558,7 +6558,7 @@ else
+     lt_cv_sys_max_cmd_len=-1;
+     ;;
+ 
+-  cygwin* | mingw* | cegcc*)
++  msys* | mingw* | cegcc*)
+     # On Win9x/ME, this test blows up -- it succeeds, but takes
+     # about 5 minutes as the teststring grows exponentially.
+     # Worse, since 9x/ME are not pre-emptively multitasking,
+@@ -6900,7 +6900,7 @@ bsdi[45]*)
+   lt_cv_file_magic_test_file=/shlib/libc.so
+   ;;
+ 
+-cygwin*)
++msys*)
+   # func_win32_libid is a shell function defined in ltmain.sh
+   lt_cv_deplibs_check_method='file_magic ^x86 archive import|^x86 DLL'
+   lt_cv_file_magic_cmd='func_win32_libid'
+@@ -7516,7 +7516,7 @@ case $host_os in
+ aix*)
+   symcode='[BCDT]'
+   ;;
+-cygwin* | mingw* | pw32* | cegcc*)
++msys* | mingw* | pw32* | cegcc*)
+   symcode='[ABCDGISTW]'
+   ;;
+ hpux*)
+@@ -9267,10 +9267,10 @@ $as_echo_n "checking for $compiler option to produce PIC... " >&6; }
+       # PIC is the default for these OSes.
+       ;;
+ 
+-    mingw* | cygwin* | pw32* | os2* | cegcc*)
++    mingw* | msys* | pw32* | os2* | cegcc*)
+       # This hack is so that the source file can tell whether it is being
+       # built for inclusion in a dll (and should export symbols for example).
+-      # Although the cygwin gcc ignores -fPIC, still need this for old-style
++      # Although the msys gcc ignores -fPIC, still need this for old-style
+       # (--disable-auto-import) libraries
+       lt_prog_compiler_pic='-DDLL_EXPORT'
+       ;;
+@@ -9349,7 +9349,7 @@ $as_echo_n "checking for $compiler option to produce PIC... " >&6; }
+       fi
+       ;;
+ 
+-    mingw* | cygwin* | pw32* | os2* | cegcc*)
++    mingw* | msys* | pw32* | os2* | cegcc*)
+       # This hack is so that the source file can tell whether it is being
+       # built for inclusion in a dll (and should export symbols for example).
+       lt_prog_compiler_pic='-DDLL_EXPORT'
+@@ -9811,7 +9811,7 @@ $as_echo_n "checking whether the $compiler linker ($LD) supports shared librarie
+   extract_expsyms_cmds=
+ 
+   case $host_os in
+-  cygwin* | mingw* | pw32* | cegcc*)
++  msys* | mingw* | pw32* | cegcc*)
+     # FIXME: the MSVC++ port hasn't been tested in a loooong time
+     # When not using gcc, we currently assume that we are using
+     # Microsoft Visual C++.
+@@ -9926,7 +9926,7 @@ _LT_EOF
+       fi
+       ;;
+ 
+-    cygwin* | mingw* | pw32* | cegcc*)
++    msys* | mingw* | pw32* | cegcc*)
+       # _LT_TAGVAR(hardcode_libdir_flag_spec, ) is actually meaningless,
+       # as there is no search path for DLLs.
+       hardcode_libdir_flag_spec='-L$libdir'
+@@ -10363,7 +10363,7 @@ if test -z "$aix_libpath"; then aix_libpath="/usr/lib:/lib"; fi
+       export_dynamic_flag_spec=-rdynamic
+       ;;
+ 
+-    cygwin* | mingw* | pw32* | cegcc*)
++    msys* | mingw* | pw32* | cegcc*)
+       # When not using gcc, we currently assume that we are using
+       # Microsoft Visual C++.
+       # hardcode_libdir_flag_spec is actually meaningless, as there is
+@@ -11314,14 +11314,14 @@ bsdi[45]*)
+   # libtool to hard-code these into programs
+   ;;
+ 
+-cygwin* | mingw* | pw32* | cegcc*)
++msys* | mingw* | pw32* | cegcc*)
+   version_type=windows
+   shrext_cmds=".dll"
+   need_version=no
+   need_lib_prefix=no
+ 
+   case $GCC,$host_os in
+-  yes,cygwin* | yes,mingw* | yes,pw32* | yes,cegcc*)
++  yes,msys* | yes,mingw* | yes,pw32* | yes,cegcc*)
+     library_names_spec='$libname.dll.a'
+     # DLL is installed to $(libdir)/../bin by postinstall_cmds
+     postinstall_cmds='base_file=`basename \${file}`~
+@@ -11339,8 +11339,8 @@ cygwin* | mingw* | pw32* | cegcc*)
+     shlibpath_overrides_runpath=yes
+ 
+     case $host_os in
+-    cygwin*)
+-      # Cygwin DLLs use 'cyg' prefix rather than 'lib'
++    msys*)
++      # msys DLLs use 'cyg' prefix rather than 'lib'
+       soname_spec='`echo ${libname} | sed -e 's/^lib/cyg/'``echo ${release} | $SED -e 's/[.]/-/g'`${versuffix}${shared_ext}'
+ 
+       sys_lib_search_path_spec="$sys_lib_search_path_spec /usr/lib/w32api"
+@@ -11998,7 +11998,7 @@ else
+     lt_cv_dlopen_libs=
+     ;;
+ 
+-  cygwin*)
++  msys*)
+     lt_cv_dlopen="dlopen"
+     lt_cv_dlopen_libs=
+     ;;
+@@ -13241,7 +13241,7 @@ if test -z "$aix_libpath"; then aix_libpath="/usr/lib:/lib"; fi
+         esac
+         ;;
+ 
+-      cygwin* | mingw* | pw32* | cegcc*)
++      msys* | mingw* | pw32* | cegcc*)
+         # _LT_TAGVAR(hardcode_libdir_flag_spec, CXX) is actually meaningless,
+         # as there is no search path for DLLs.
+         hardcode_libdir_flag_spec_CXX='-L$libdir'
+@@ -14262,10 +14262,10 @@ $as_echo_n "checking for $compiler option to produce PIC... " >&6; }
+     beos* | irix5* | irix6* | nonstopux* | osf3* | osf4* | osf5*)
+       # PIC is the default for these OSes.
+       ;;
+-    mingw* | cygwin* | os2* | pw32* | cegcc*)
++    mingw* | msys* | os2* | pw32* | cegcc*)
+       # This hack is so that the source file can tell whether it is being
+       # built for inclusion in a dll (and should export symbols for example).
+-      # Although the cygwin gcc ignores -fPIC, still need this for old-style
++      # Although the msys gcc ignores -fPIC, still need this for old-style
+       # (--disable-auto-import) libraries
+       lt_prog_compiler_pic_CXX='-DDLL_EXPORT'
+       ;;
+@@ -14802,7 +14802,7 @@ $as_echo_n "checking whether the $compiler linker ($LD) supports shared librarie
+   pw32*)
+     export_symbols_cmds_CXX="$ltdll_cmds"
+   ;;
+-  cygwin* | mingw* | cegcc*)
++  msys* | mingw* | cegcc*)
+     export_symbols_cmds_CXX='$NM $libobjs $convenience | $global_symbol_pipe | $SED -e '\''/^[BCDGRS][ ]/s/.*[ ]\([^ ]*\)/\1 DATA/;/^.*[ ]__nm__/s/^.*[ ]__nm__\([^ ]*\)[ ][^ ]*/\1 DATA/;/^I[ ]/d;/^[AITW][ ]/s/.* //'\'' | sort | uniq > $export_symbols'
+   ;;
+   *)
+@@ -15066,14 +15066,14 @@ bsdi[45]*)
+   # libtool to hard-code these into programs
+   ;;
+ 
+-cygwin* | mingw* | pw32* | cegcc*)
++msys* | mingw* | pw32* | cegcc*)
+   version_type=windows
+   shrext_cmds=".dll"
+   need_version=no
+   need_lib_prefix=no
+ 
+   case $GCC,$host_os in
+-  yes,cygwin* | yes,mingw* | yes,pw32* | yes,cegcc*)
++  yes,msys* | yes,mingw* | yes,pw32* | yes,cegcc*)
+     library_names_spec='$libname.dll.a'
+     # DLL is installed to $(libdir)/../bin by postinstall_cmds
+     postinstall_cmds='base_file=`basename \${file}`~
+@@ -15091,8 +15091,8 @@ cygwin* | mingw* | pw32* | cegcc*)
+     shlibpath_overrides_runpath=yes
+ 
+     case $host_os in
+-    cygwin*)
+-      # Cygwin DLLs use 'cyg' prefix rather than 'lib'
++    msys*)
++      # msys DLLs use 'cyg' prefix rather than 'lib'
+       soname_spec='`echo ${libname} | sed -e 's/^lib/cyg/'``echo ${release} | $SED -e 's/[.]/-/g'`${versuffix}${shared_ext}'
+ 
+       ;;
+@@ -15718,7 +15718,7 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
+ 
+ 
+ case $host in
+-  *-cygwin* | *-mingw*)
++  *-msys* | *-mingw*)
+     # 'host' will be top-level target in the case of a target lib,
+     # we must compare to with_cross_host to decide if this is a native
+     # or cross-compiler and select where to install dlls appropriately.
+@@ -19569,7 +19569,7 @@ $as_echo "$enable_vtable_verify" >&6; }
+   vtv_cygmin=no
+   if test $enable_vtable_verify = yes; then
+     case ${target_os} in
+-      cygwin*|mingw32*)
++      msys*|mingw32*)
+         VTV_CXXFLAGS="-fvtable-verify=std -Wl,-lvtv,-u_vtable_map_vars_start,-u_vtable_map_vars_end"
+         VTV_CXXLINKFLAGS="-L${toplevel_builddir}/libvtv/.libs -Wl,--rpath -Wl,${toplevel_builddir}/libvtv/.libs"
+         vtv_cygmin=yes
+@@ -21287,7 +21287,7 @@ ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
+   if test x"$enable_libstdcxx_time" = x"auto"; then
+ 
+     case "${target_os}" in
+-      cygwin*)
++      msys*)
+         ac_has_clock_monotonic=yes
+         ac_has_clock_realtime=yes
+         ac_has_nanosleep=yes
+@@ -23040,10 +23040,10 @@ $as_echo "$ac_gcsections" >&6; }
+   # Note this is only for shared objects.
+   ac_ld_relro=no
+   if test x"$with_gnu_ld" = x"yes"; then
+-    # cygwin and mingw uses PE, which has no ELF relro support,
++    # msys and mingw uses PE, which has no ELF relro support,
+     # multi target ld may confuse configure machinery
+     case "$host" in
+-    *-*-cygwin*)
++    *-*-msys*)
+      ;;
+     *-*-mingw*)
+      ;;
+@@ -28885,10 +28885,10 @@ $as_echo "$ac_gcsections" >&6; }
+   # Note this is only for shared objects.
+   ac_ld_relro=no
+   if test x"$with_gnu_ld" = x"yes"; then
+-    # cygwin and mingw uses PE, which has no ELF relro support,
++    # msys and mingw uses PE, which has no ELF relro support,
+     # multi target ld may confuse configure machinery
+     case "$host" in
+-    *-*-cygwin*)
++    *-*-msys*)
+      ;;
+     *-*-mingw*)
+      ;;
+@@ -32064,10 +32064,10 @@ $as_echo "$ac_gcsections" >&6; }
+   # Note this is only for shared objects.
+   ac_ld_relro=no
+   if test x"$with_gnu_ld" = x"yes"; then
+-    # cygwin and mingw uses PE, which has no ELF relro support,
++    # msys and mingw uses PE, which has no ELF relro support,
+     # multi target ld may confuse configure machinery
+     case "$host" in
+-    *-*-cygwin*)
++    *-*-msys*)
+      ;;
+     *-*-mingw*)
+      ;;
+@@ -38282,10 +38282,10 @@ $as_echo "$ac_gcsections" >&6; }
+   # Note this is only for shared objects.
+   ac_ld_relro=no
+   if test x"$with_gnu_ld" = x"yes"; then
+-    # cygwin and mingw uses PE, which has no ELF relro support,
++    # msys and mingw uses PE, which has no ELF relro support,
+     # multi target ld may confuse configure machinery
+     case "$host" in
+-    *-*-cygwin*)
++    *-*-msys*)
+      ;;
+     *-*-mingw*)
+      ;;
+@@ -38570,10 +38570,10 @@ $as_echo "$ac_gcsections" >&6; }
+   # Note this is only for shared objects.
+   ac_ld_relro=no
+   if test x"$with_gnu_ld" = x"yes"; then
+-    # cygwin and mingw uses PE, which has no ELF relro support,
++    # msys and mingw uses PE, which has no ELF relro support,
+     # multi target ld may confuse configure machinery
+     case "$host" in
+-    *-*-cygwin*)
++    *-*-msys*)
+      ;;
+     *-*-mingw*)
+      ;;
+@@ -38856,7 +38856,7 @@ $as_echo "#define HAVE_TLS 1" >>confdefs.h
+ 
+   fi
+     ;;
+-  *-linux* | *-uclinux* | *-gnu* | *-kfreebsd*-gnu | *-cygwin* | *-solaris*)
++  *-linux* | *-uclinux* | *-gnu* | *-kfreebsd*-gnu | *-msys* | *-solaris*)
+ 
+   # All these tests are for C++; save the language and the compiler flags.
+   # The CXXFLAGS thing is suspicious, but based on similar bits previously
+@@ -39035,10 +39035,10 @@ $as_echo "$ac_gcsections" >&6; }
+   # Note this is only for shared objects.
+   ac_ld_relro=no
+   if test x"$with_gnu_ld" = x"yes"; then
+-    # cygwin and mingw uses PE, which has no ELF relro support,
++    # msys and mingw uses PE, which has no ELF relro support,
+     # multi target ld may confuse configure machinery
+     case "$host" in
+-    *-*-cygwin*)
++    *-*-msys*)
+      ;;
+     *-*-mingw*)
+      ;;
+@@ -42477,10 +42477,10 @@ $as_echo "$ac_gcsections" >&6; }
+   # Note this is only for shared objects.
+   ac_ld_relro=no
+   if test x"$with_gnu_ld" = x"yes"; then
+-    # cygwin and mingw uses PE, which has no ELF relro support,
++    # msys and mingw uses PE, which has no ELF relro support,
+     # multi target ld may confuse configure machinery
+     case "$host" in
+-    *-*-cygwin*)
++    *-*-msys*)
+      ;;
+     *-*-mingw*)
+      ;;
+@@ -45872,10 +45872,10 @@ $as_echo "$ac_gcsections" >&6; }
+   # Note this is only for shared objects.
+   ac_ld_relro=no
+   if test x"$with_gnu_ld" = x"yes"; then
+-    # cygwin and mingw uses PE, which has no ELF relro support,
++    # msys and mingw uses PE, which has no ELF relro support,
+     # multi target ld may confuse configure machinery
+     case "$host" in
+-    *-*-cygwin*)
++    *-*-msys*)
+      ;;
+     *-*-mingw*)
+      ;;
+@@ -46085,10 +46085,10 @@ $as_echo "$ac_gcsections" >&6; }
+   # Note this is only for shared objects.
+   ac_ld_relro=no
+   if test x"$with_gnu_ld" = x"yes"; then
+-    # cygwin and mingw uses PE, which has no ELF relro support,
++    # msys and mingw uses PE, which has no ELF relro support,
+     # multi target ld may confuse configure machinery
+     case "$host" in
+-    *-*-cygwin*)
++    *-*-msys*)
+      ;;
+     *-*-mingw*)
+      ;;
+@@ -52057,7 +52057,7 @@ done
+   if $GLIBCXX_IS_NATIVE && test $is_hosted = yes &&
+      test $enable_symvers != no; then
+     case "$host" in
+-      *-*-cygwin*)
++      *-*-msys*)
+ 	enable_abi_check=no ;;
+       *)
+ 	enable_abi_check=yes ;;
+diff --git a/libstdc++-v3/configure.host b/libstdc++-v3/configure.host
+index 7bc43071616..93780aa6ad0 100644
+--- a/libstdc++-v3/configure.host
++++ b/libstdc++-v3/configure.host
+@@ -220,7 +220,7 @@ case "${host_os}" in
+     # Plain BSD attempts to share FreeBSD files.
+     os_include_dir="os/bsd/freebsd"
+     ;;
+-  cygwin*)
++  msys*)
+     os_include_dir="os/newlib"
+     OPT_LDFLAGS="${OPT_LDFLAGS} \$(lt_host_flags)"
+     ;;

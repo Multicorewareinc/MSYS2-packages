@@ -36,9 +36,10 @@ source=(
 )
 sha256sums=(
   'SKIP'
-  'e98805ead7d78ee2a92f237894c4b2b7ddc1688e1b517d8c04f28d440202e40f'
-  'fd9bdecb2bbc4796bbc9f00b708dac42ef9e3464a06d6d27e5475cee117de5be'
-  'ad1f7b5e7afaaec008b7cbd14feea13a10989fa91bda7003af72d457619bb199'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
   'SKIP'
 )
 
@@ -52,12 +53,17 @@ apply_patch_with_msg() {
 prepare() {
   cd ${srcdir}/${_realname}
 
-#   apply_patch_with_msg \
-#     0012-Handle-spaces-in-path-for-default-manifest.patch \
-#     0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch \
-#     0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch \
-#     9998-aarch64-pc-msys-target.patch
-
+  # apply_patch_with_msg \
+  #   0012-Handle-spaces-in-path-for-default-manifest.patch \
+  #   0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch \
+  #   0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch \
+  #   9998-aarch64-pc-msys-target.patch
+  git apply --whitespace=fix \
+    "${srcdir}"/0012-Handle-spaces-in-path-for-default-manifest.patch \
+    "${srcdir}"/0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch \
+    "${srcdir}"/0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch \
+    "${srcdir}"/9998-aarch64-pc-msys-target.patch \
+    "${srcdir}"/9999-msys-macro.patch
   # --- Verify stage1 compiler is present ---
   echo "--- Stage2 prerequisite check ---"
   which aarch64-pc-msys-gcc || {
