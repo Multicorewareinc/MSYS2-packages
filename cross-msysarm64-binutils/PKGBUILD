@@ -13,14 +13,14 @@ license=('GPL')
 depends=("libiconv" "zlib" "libzstd" "libintl")
 makedepends=("libiconv-devel" "zlib-devel" 'autotools' 'gcc' 'libzstd-devel' 'gettext-devel' 'git' 'gmp-devel' 'mpfr-devel')
 options=('staticlibs' '!distcc' '!ccache' '!buildflags')
-source=("${_realname}"::"git+https://github.com/Windows-on-ARM-Experiments/binutils-woarm64.git#branch=woarm64"
+source=("${_realname}"::"git+https://github.com/Multicorewareinc/binutils-woarm64.git#branch=native-testing"
         0002-check-for-unusual-file-harder.patch
         0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch
         9999-workarounds.patch
         9998-aarch64-pc-msys-target.patch)
 sha256sums=('SKIP'
-            '2c99345fc575c3a060d6677537f636c6c4154fac0fde508070f3b6296c1060d4'
-            '4e8ac055df61b1b5d6ae29dc87e1154737c2e87c7b244b44866702cabf1a5d18'
+            'SKIP'
+            'SKIP'
             'SKIP'
             'SKIP')
 
@@ -33,11 +33,15 @@ apply_patch_with_msg() {
 
 prepare() {
   cd ${srcdir}/binutils
-  apply_patch_with_msg \
-    0002-check-for-unusual-file-harder.patch \
-    0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch \
-    9999-workarounds.patch \
-    9998-aarch64-pc-msys-target.patch
+  # apply_patch_with_msg \
+  #   0002-check-for-unusual-file-harder.patch \
+  #   0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch \
+  #   9999-workarounds.patch \
+  #   9998-aarch64-pc-msys-target.patch
+    git apply --whitespace=fix \
+    "${srcdir}"/0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch \
+    "${srcdir}"/9999-workarounds.patch \
+    "${srcdir}"/9998-aarch64-pc-msys-target.patch
 }
 
 build() {
