@@ -143,7 +143,7 @@ build() {
   export DLLTOOL=aarch64-pc-msys-dlltool
   export WINDRES=aarch64-pc-msys-windres
   export WINDMC=aarch64-pc-msys-windmc
-
+#  _headers="${HOME}/headers"
   which aarch64-w64-mingw32-g++ || \
     echo "WARNING: mingw aarch64 g++ not found"
 
@@ -153,8 +153,8 @@ build() {
   echo "newlib libm/ld/ long double files patched for aarch64"
 
   # Run autogen specifically for winsup
-  # cd ${srcdir}/${_realname}/winsup
-  # ./autogen.sh || autoreconf -fvi || true
+  cd ${srcdir}/${_realname}/winsup
+  ./autogen.sh || autoreconf -fvi || true
 
   mkdir -p ${srcdir}/runtime-build
   cd ${srcdir}/runtime-build
@@ -163,7 +163,7 @@ build() {
   -D_MB_CAPABLE=1 \
   -isystem /usr/lib/gcc/aarch64-pc-msys/15/include \
   -isystem /usr/lib/gcc/aarch64-pc-msys/15/include-fixed \
-  -isystem /home/mcw/headers/aarch64-pc-msys/include \
+  -isystem ${HOME}/headers/aarch64-pc-msys/include \
   -isystem /usr/aarch64-pc-msys/include \
   -O1 -pipe"
 
@@ -175,9 +175,11 @@ build() {
   -isystem /usr/lib/gcc/aarch64-pc-msys/15/include-fixed \
   -isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++ \
   -isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++/backward \
-  -isystem /home/mcw/headers/aarch64-pc-msys/include \
+  -isystem ${HOME}/headers/aarch64-pc-msys/include \
   -isystem /usr/aarch64-pc-msys/include \
   -O1 -pipe"
+  export ac_cv_lib_sframe_sframe_decode=no
+  export ac_cv_lib_zstd_ZSTD_isError=no
   CXXFLAGS_FOR_TARGET="-Wno-error -Wno-narrowing" \
   ${srcdir}/${_realname}/winsup/configure \
     --prefix=/usr \
@@ -205,6 +207,15 @@ build() {
     MINGW_CC=aarch64-w64-mingw32-gcc \
     CFLAGS="${CFLAGS}" \
     CXXFLAGS="${CXXFLAGS}"
+
+sed -i '/config\.status.*--recheck/d' Makefile
+sed -i 's/^am--refresh:.*/am--refresh:/' Makefile
+# ADD THESE for subdirs too:
+sed -i '/config\.status.*--recheck/d' cygwin/Makefile
+sed -i 's/^am--refresh:.*/am--refresh:/' cygwin/Makefile
+sed -i '/config\.status.*--recheck/d' cygserver/Makefile
+sed -i 's/^am--refresh:.*/am--refresh:/' cygserver/Makefile
+
 sed -i '/-mno-use-libstdc-wrappers/d' cygwin/Makefile
 cat >> cygwin/Makefile << 'EOF'
 
@@ -222,20 +233,20 @@ cd cygserver
 make -j$(nproc) OBJEXT=o
 cd ../
 sed -i '/^\$(LIBSERVER):/,/libcygserver\.a/c\
-LIBSERVER = /home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/runtime-build/cygserver/libcygserver.a
+LIBSERVER = ${HOME}/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/runtime-build/cygserver/libcygserver.a
 ' cygwin/Makefile
 sed -i '/-mno-use-libstdc-wrappers/d' cygwin/Makefile
 cd cygwin 
 # aarch64-pc-msys-g++ \
 # -DHAVE_CONFIG_H \
 # -I. \
-# -I/home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/winsup/cygwin \
+# -I${srcdir}/${_realname}/winsup/cygwin \
 # -U_FORTIFY_SOURCE \
-# -I/home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/winsup/cygwin/local_includes \
-# -I/home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/winsup/cygwin \
-# -isystem /home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/winsup/cygwin/include \
-# -isystem /home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/newlib/targ-include \
-# -isystem /home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/newlib/libc/include \
+# -I${srcdir}/${_realname}/winsup/cygwin/local_includes \
+# -I${HOME}/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/winsup/cygwin \
+# -isystem ${srcdir}/${_realname}/winsup/cygwin/include \
+# -isystem ${HOME}/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/newlib/targ-include \
+# -isystem ${srcdir}/${_realname}/newlib/libc/include \
 # -fno-rtti -fno-exceptions -fno-use-cxa-atexit \
 # -fno-threadsafe-statics \
 # -nostdinc -nostdinc++ \
@@ -244,26 +255,26 @@ cd cygwin
 # -isystem /usr/lib/gcc/aarch64-pc-msys/15/include-fixed \
 # -isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++ \
 # -isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++/backward \
-# -isystem /home/mcw/headers/aarch64-pc-msys/include \
+# -isystem ${HOME}/headers/aarch64-pc-msys/include \
 # -isystem /usr/aarch64-pc-msys/include \
 # -fno-merge-constants \
 # -O0 \
 # -MT fhandler/netdrive.o -MD -MP -MF /tmp/netdrive.Tpo \
 # -c -o fhandler/netdrive.o \
-# /home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/winsup/cygwin/fhandler/netdrive.cc
+# ${srcdir}/${_realname}/winsup/cygwin/fhandler/netdrive.cc
 
 # touch fhandler/netdrive.o
 # touch fhandler/.deps/netdrive.Po
 
 aarch64-pc-msys-g++ -DHAVE_CONFIG_H \
 -I. \
--I/home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/winsup/cygwin \
+-I${srcdir}/${_realname}/winsup/cygwin \
 -U_FORTIFY_SOURCE \
--I/home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/winsup/cygwin/local_includes \
--I/home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/winsup/cygwin \
--isystem /home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/winsup/cygwin/include \
--isystem /home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/newlib/targ-include \
--isystem /home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/newlib/libc/include \
+-I${srcdir}/${_realname}/winsup/cygwin/local_includes \
+-I${HOME}/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/winsup/cygwin \
+-isystem ${srcdir}/${_realname}/winsup/cygwin/include \
+-isystem ${HOME}/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/newlib/targ-include \
+-isystem ${srcdir}/${_realname}/newlib/libc/include \
 -fno-rtti -fno-exceptions -fno-use-cxa-atexit \
 -fno-threadsafe-statics \
 -nostdinc -nostdinc++ \
@@ -272,13 +283,13 @@ aarch64-pc-msys-g++ -DHAVE_CONFIG_H \
 -isystem /usr/lib/gcc/aarch64-pc-msys/15/include-fixed \
 -isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++ \
 -isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++/backward \
--isystem /home/mcw/headers/aarch64-pc-msys/include \
+-isystem ${HOME}/headers/aarch64-pc-msys/include \
 -isystem /usr/aarch64-pc-msys/include \
 -fno-merge-constants \
 -O0 \
 -MT msys2_path_conv.o -MD -MP -MF /tmp/msys2_path_conv.Tpo \
 -c -o msys2_path_conv.o \
-/home/mcw/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/msys2-runtime/winsup/cygwin/msys2_path_conv.cc
+${srcdir}/${_realname}/winsup/cygwin/msys2_path_conv.cc
 
 touch msys2_path_conv.o
   # 🔍 MB_CAPABLE CHECK STARTS HERE
@@ -303,7 +314,7 @@ EOF
   MAKEFILE="cygwin/Makefile"
 
   echo "Makefile clean patch applied"
-  make -j$(nproc) 
+  make -j$(nproc) OBJEXT=o
 }
 
 # package_msys2-runtime() {
