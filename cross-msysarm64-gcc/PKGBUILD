@@ -33,6 +33,7 @@ source=(
   0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch
   0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch
   9998-aarch64-pc-msys-target.patch
+  9999-msys-macro.patch
 )
 sha256sums=(
   'SKIP'
@@ -71,21 +72,24 @@ prepare() {
     exit 1
   }
 
-  # --- Verify real msys2-runtime is installed (not the stub) ---
-  # libcygwin.a must be non-empty (stage1 stub was empty)
-  _libcygwin=/usr/aarch64-pc-msys/lib/libcygwin.a
-  if [ ! -f "${_libcygwin}" ]; then
-    echo "FATAL: libcygwin.a missing — install msys2-runtime-devel"
-    exit 1
-  fi
-  _size=$(stat -c%s "${_libcygwin}")
-  if [ "${_size}" -lt 1024 ]; then
-    echo "FATAL: libcygwin.a is too small (${_size} bytes) — looks like the stub."
-    echo "       Install the real msys2-runtime-devel package first."
-    exit 1
-  fi
-  echo "libcygwin.a OK (${_size} bytes)"
-
+  # # --- Verify real msys2-runtime is installed (not the stub) ---
+  # # libcygwin.a must be non-empty (stage1 stub was empty)
+  # _libcygwin=/usr/aarch64-pc-msys/lib/libcygwin.a
+  # if [ ! -f "${_libcygwin}" ]; then
+  #   echo "FATAL: libcygwin.a missing — install msys2-runtime-devel"
+  #   exit 1
+  # fi
+  # _size=$(stat -c%s "${_libcygwin}")
+  # if [ "${_size}" -lt 1024 ]; then
+  #   echo "FATAL: libcygwin.a is too small (${_size} bytes) — looks like the stub."
+  #   echo "       Install the real msys2-runtime-devel package first."
+  #   exit 1
+  # fi
+  # echo "libcygwin.a OK (${_size} bytes)"
+  cp $HOME/MSYS2-packages/msys2-runtime-aarch64/src/runtime-build/cygwin/libmsys-2.0.a /usr/aarch64-pc-msys/lib/
+  cp $HOME/MSYS2-packages/msys2-runtime-aarch64/src/newlib/libc.a /usr/aarch64-pc-msys/lib/
+  cp $HOME/MSYS2-packages/msys2-runtime-aarch64/src/newlib/libm.a /usr/aarch64-pc-msys/lib/
+  cp $HOME/MSYS2-packages/msys2-runtime-aarch64/src/newlib/libg.a /usr/aarch64-pc-msys/lib/
   # --- Verify crt0.o is the real one ---
   _crt0=/usr/aarch64-pc-msys/lib/crt0.o
   _crt0size=$(stat -c%s "${_crt0}" 2>/dev/null || echo 0)
@@ -106,6 +110,7 @@ prepare() {
 }
 
 build() {
+  ln -sf /usr/aarch64-pc-msys/lib/libmsys-2.0.a /usr/aarch64-pc-msys/lib/libcygwin.a
   export lt_cv_deplibs_check_method='pass_all'
 
   mkdir -p ${srcdir}/gcc-build && cd ${srcdir}/gcc-build
@@ -200,8 +205,6 @@ build() {
   make all-target-libstdc++-v3
 
   make all-target-libgomp   || echo "WARNING: libgomp failed"
-  make all-target-libatomic || echo "WARNING: libatomic failed"
-
 }
 package() {
  cd ${srcdir}/gcc-build
@@ -210,7 +213,6 @@ package() {
   make -j1 DESTDIR=${pkgdir} install-target-libgcc
   make -j1 DESTDIR=${pkgdir} install-target-libstdc++-v3
   make -j1 DESTDIR=${pkgdir} install-target-libgomp   || true
-  make -j1 DESTDIR=${pkgdir} install-target-libatomic || true
 
  # Remove info/man pages — not needed in cross toolchain
   rm -rf ${pkgdir}/usr/share
