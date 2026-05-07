@@ -204,7 +204,7 @@ export CFLAGS="\
   # GCC_VER=15.0.1
   # GCC_BASE=/usr/lib/gcc/aarch64-pc-msys/${GCC_VER}
 
-  # SYSROOT_INC=/home/mcw/headers/aarch64-pc-msys/include
+  # SYSROOT_INC=/home/HCKTest/headers/aarch64-pc-msys/include
 
   # export CFLAGS="\
   # -nostdinc \
