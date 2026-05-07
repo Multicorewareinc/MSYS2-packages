@@ -34,6 +34,7 @@ source=(
   0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch
   0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch
   9998-aarch64-pc-msys-target.patch
+  9999-msys-macro.patch
 )
 sha256sums=(
   'SKIP'
@@ -133,6 +134,8 @@ package() {
   _cxxdir=${pkgdir}/usr/lib/gcc/${_target}/${_realver}/include/c++
   mkdir -p ${_cxxdir}/bits
   cp -r ${srcdir}/${_realname}/libstdc++-v3/include/. ${_cxxdir}/
+  cp -r ${srcdir}/${_realname}/libstdc++-v3/libsupc++/new ${_cxxdir}/
+  cp -r ${srcdir}/${_realname}/libstdc++-v3/libsupc++/exception.h ${_cxxdir}/bits/
 
   # Provide a minimal bits/c++config.h stub.
   # This is intentionally minimal — it only needs to be sufficient to
@@ -141,18 +144,30 @@ package() {
   cat > ${_cxxdir}/bits/c++config.h << 'CXXCONFIG'
 #ifndef _GLIBCXX_CXX_CONFIG_H
 #define _GLIBCXX_CXX_CONFIG_H 1
+
 #define __GLIBCXX__ 1
-#define _GLIBCXX_HAVE_ATTRIBUTE_VISIBILITY 1
+
+// Exception / ABI macros
+#define _GLIBCXX_NOTHROW noexcept
+#define _GLIBCXX_USE_NOEXCEPT noexcept
+#define _GLIBCXX_THROW(...) noexcept
+#define _GLIBCXX_TXN_SAFE
+#define _GLIBCXX_TXN_SAFE_DYN
+#define _GLIBCXX_NODISCARD [[nodiscard]]
+
+// Visibility
 #define _GLIBCXX_VISIBILITY(V) __attribute__((__visibility__(#V)))
 #define _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #define _GLIBCXX_END_NAMESPACE_VERSION
+
+// Feature flags
 #define _GLIBCXX_USE_C99_STDLIB 1
 #define _GLIBCXX_USE_C99_MATH 1
-#define _GLIBCXX_LONG_DOUBLE_COMPAT 0
 #define _GLIBCXX_USE_WCHAR_T 1
 #define _GLIBCXX_HAS_GTHREADS 1
-namespace std _GLIBCXX_VISIBILITY(default) {
-  typedef __SIZE_TYPE__    size_t;
+
+namespace std {
+  typedef __SIZE_TYPE__ size_t;
   typedef __PTRDIFF_TYPE__ ptrdiff_t;
 }
 #endif
