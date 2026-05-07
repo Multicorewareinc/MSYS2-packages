@@ -45,13 +45,13 @@ package() {
   # Install to sysroot/usr (standard prefix install)
   make DESTDIR=${pkgdir} install
 
-  # Also copy to bare sysroot locations
-  mkdir -p ${pkgdir}${_sysroot}/include
-  mkdir -p ${pkgdir}${_sysroot}/sys-include
-  cp -r ${pkgdir}${_sysroot}/usr/include/. \
-    ${pkgdir}${_sysroot}/include/
-  cp -r ${pkgdir}${_sysroot}/usr/include/. \
-    ${pkgdir}${_sysroot}/sys-include/
+  # # Also copy to bare sysroot locations
+  # mkdir -p ${pkgdir}${_sysroot}/include
+  # mkdir -p ${pkgdir}${_sysroot}/sys-include
+  # cp -r ${pkgdir}${_sysroot}/usr/include/. \
+  #   ${pkgdir}${_sysroot}/include/
+  # cp -r ${pkgdir}${_sysroot}/usr/include/. \
+  #   ${pkgdir}${_sysroot}/sys-include/
 
   # Fix _WIN64 for aarch64 pointer sizes in all locations
   find ${pkgdir}${_sysroot} -name "basetsd.h" -exec \

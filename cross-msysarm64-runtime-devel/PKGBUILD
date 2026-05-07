@@ -13,7 +13,7 @@ makedepends=("git")
 source=(
   # Using cygwin-own — full top-level source tree with newlib + winsup
   # This is the correct structure matching the Cygwin reference build scripts
-  "${_realname}::git+https://github.com/thiru-mcw/cygwin-own.git#branch=mcw/main"
+  "${_realname}::git+https://github.com/Multicorewareinc/cygwin-dev.git#branch=mcw/main"
 )
 sha256sums=('SKIP')
 
