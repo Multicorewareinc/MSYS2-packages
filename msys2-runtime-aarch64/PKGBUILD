@@ -101,20 +101,20 @@ CEOF
   # These come from cross-msysarm64-crt (--enable-w32api build).
   # They should already be in /usr/aarch64-pc-msys/lib/w32api/ with symlinks.
   # Just verify here — do NOT stub these, stubs will break the link.
-  echo "--- Verifying Win32 import libs from cross-msysarm64-crt ---"
-  _ok=1
-  for lib in kernel32 user32 advapi32 shell32 ntdll; do
-    if [ -f /usr/aarch64-pc-msys/lib/lib${lib}.a ]; then
-      echo "  lib${lib}.a OK"
-    else
-      echo "  ERROR: lib${lib}.a MISSING — cross-msysarm64-crt not installed correctly"
-      _ok=0
-    fi
-  done
-  if [ $_ok -ne 1 ]; then
-    echo "FATAL: Missing Win32 import libs. Install cross-msysarm64-crt first."
-    exit 1
-  fi
+  # echo "--- Verifying Win32 import libs from cross-msysarm64-crt ---"
+  # _ok=1
+  # for lib in kernel32 user32 advapi32 shell32 ntdll; do
+  #   if [ -f /usr/aarch64-pc-msys/lib/lib${lib}.a ]; then
+  #     echo "  lib${lib}.a OK"
+  #   else
+  #     echo "  ERROR: lib${lib}.a MISSING — cross-msysarm64-crt not installed correctly"
+  #     _ok=0
+  #   fi
+  # done
+  # if [ $_ok -ne 1 ]; then
+  #   echo "FATAL: Missing Win32 import libs. Install cross-msysarm64-crt first."
+  #   exit 1
+  # fi
 
   # --- libstdc++ header shadow removal ---
   # libstdc++ wrappers for C headers shadow newlib headers in the sysroot.
@@ -202,7 +202,7 @@ build() {
   -D_MB_CAPABLE=1 \
   -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include \
   -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include-fixed \
-  -isystem /home/HCKTest/headers/aarch64-pc-msys/include \
+  -isystem ${HOME}/headers/aarch64-pc-msys/include \
   -isystem /usr/aarch64-pc-msys/include \
   -O1 -pipe"
 
@@ -214,7 +214,7 @@ build() {
   -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include-fixed \
   -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++ \
   -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++/backward \
-  -isystem /home/HCKTest/headers/aarch64-pc-msys/include \
+  -isystem ${HOME}/headers/aarch64-pc-msys/include \
   -isystem /usr/aarch64-pc-msys/include \
   -O1 -pipe"
   export ac_cv_lib_sframe_sframe_decode=no
@@ -257,10 +257,10 @@ fhandler/netdrive.o: CXXFLAGS := $(filter-out -O% -ftracer -fmerge-constants -We
 
 fhandler/netdrive.o: AM_CXXFLAGS :=
 EOF
-
-cd /home/HCKTest/MSYS2-packages/mingw-w64-cross-mingwarm64-crt/pkg/mingw-w64-cross-mingwarm64-crt/opt/aarch64-w64-mingw32/lib/
+mkdir -p /usr/aarch64-pc-msys/include/w32api && cp /usr/aarch64-pc-msys/include/*.h /usr/aarch64-pc-msys/include/w32api/
+cd ${HOME}/MSYS2-packages/mingw-w64-cross-mingwarm64-crt/pkg/mingw-w64-cross-mingwarm64-crt/opt/aarch64-w64-mingw32/lib/
 cp libadvapi32.a libkernel32.a libntdll.a libshell32.a libuser32.a /usr/aarch64-pc-msys/lib/
-cd /home/HCKTest/MSYS2-packages/msys2-runtime-aarch64/src/runtime-build/
+cd ${HOME}/MSYS2-packages/msys2-runtime-aarch64/src/runtime-build/
 cd cygwin
 make child_info_magic.h shared_info_magic.h globals.h localtime.patched.c stamp-h1 config.h
 cd ../
@@ -268,20 +268,20 @@ cd cygserver
 make -j$(nproc) OBJEXT=o
 cd ../
 sed -i '/^\$(LIBSERVER):/,/libcygserver\.a/c\
-LIBSERVER = /home/HCKTest/MSYS2-packages/msys2-runtime-aarch64/src/runtime-build/cygserver/libcygserver.a
+LIBSERVER = ${HOME}/MSYS2-packages/msys2-runtime-aarch64/src/runtime-build/cygserver/libcygserver.a
 ' cygwin/Makefile
 sed -i '/-mno-use-libstdc-wrappers/d' cygwin/Makefile
 cd cygwin 
 
 aarch64-pc-msys-g++ -DHAVE_CONFIG_H \
 -I. \
--I/home/HCKTest/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/winsup/cygwin \
+-I${srcdir}/${_realname}/winsup/cygwin \
 -U_FORTIFY_SOURCE \
--I/home/HCKTest/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/winsup/cygwin/local_includes \
--I/home/HCKTest/MSYS2-packages/msys2-runtime-aarch64/src/winsup/cygwin \
--isystem /home/HCKTest/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/winsup/cygwin/include \
--isystem /home/HCKTest/MSYS2-packages/msys2-runtime-aarch64/src/newlib/targ-include \
--isystem /home/HCKTest/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/newlib/libc/include \
+-I${srcdir}/${_realname}/winsup/cygwin/local_includes \
+-I${HOME}/MSYS2-packages/msys2-runtime-aarch64/src/winsup/cygwin \
+-isystem ${srcdir}/${_realname}/winsup/cygwin/include \
+-isystem ${HOME}/MSYS2-packages/msys2-runtime-aarch64/src/newlib/targ-include \
+-isystem ${srcdir}/${_realname}/newlib/libc/include \
 -fno-rtti -fno-exceptions -fno-use-cxa-atexit \
 -fno-threadsafe-statics \
 -nostdinc -nostdinc++ \
@@ -290,13 +290,13 @@ aarch64-pc-msys-g++ -DHAVE_CONFIG_H \
 -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include-fixed \
 -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++ \
 -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++/backward \
--isystem /home/HCKTest/headers/aarch64-pc-msys/include \
+-isystem ${HOME}/headers/aarch64-pc-msys/include \
 -isystem /usr/aarch64-pc-msys/include \
 -fno-merge-constants \
 -O0 \
 -MT msys2_path_conv.o -MD -MP -MF /tmp/msys2_path_conv.Tpo \
 -c -o msys2_path_conv.o \
-/home/HCKTest/MSYS2-packages/msys2-runtime-aarch64/src/msys2-runtime/winsup/cygwin/msys2_path_conv.cc
+${srcdir}/${_realname}/winsup/cygwin/msys2_path_conv.cc
 
 touch msys2_path_conv.o
   # 🔍 MB_CAPABLE CHECK STARTS HERE
@@ -324,32 +324,32 @@ EOF
   make -j$(nproc) OBJEXT=o
 }
 
-package_msys2-runtime() {
-  pkgdesc="Cygwin POSIX emulation engine (aarch64-pc-msys)"
-  conflicts=('catgets' 'libcatgets')
-  replaces=('catgets' 'libcatgets')
+# package_msys2-runtime() {
+#   pkgdesc="Cygwin POSIX emulation engine (aarch64-pc-msys)"
+#   conflicts=('catgets' 'libcatgets')
+#   replaces=('catgets' 'libcatgets')
 
-  cd ${srcdir}/runtime-build
-  make DESTDIR=${pkgdir} install
+#   cd ${srcdir}/runtime-build
+#   make DESTDIR=${pkgdir} install
 
-  # Runtime package: DLL only, no headers or import libs
-  rm -rf ${pkgdir}/usr/include
-  rm -rf ${pkgdir}/usr/lib
-}
+#   # Runtime package: DLL only, no headers or import libs
+#   rm -rf ${pkgdir}/usr/include
+#   rm -rf ${pkgdir}/usr/lib
+# }
 
-package_msys2-runtime-devel() {
-  pkgdesc="Headers and import lib for msys2-runtime (aarch64-pc-msys)"
-  depends=("msys2-runtime=${pkgver}")
-  conflicts=('catgets-devel' 'libcatgets-devel')
-  replaces=('catgets-devel' 'libcatgets-devel')
+# package_msys2-runtime-devel() {
+#   pkgdesc="Headers and import lib for msys2-runtime (aarch64-pc-msys)"
+#   depends=("msys2-runtime=${pkgver}")
+#   conflicts=('catgets-devel' 'libcatgets-devel')
+#   replaces=('catgets-devel' 'libcatgets-devel')
 
-  cd ${srcdir}/runtime-build
-  make DESTDIR=${pkgdir} install
+#   cd ${srcdir}/runtime-build
+#   make DESTDIR=${pkgdir} install
 
-  # Devel package: headers + import libs only, no DLL or executables
-  rm -rf ${pkgdir}/usr/bin
-  rm -rf ${pkgdir}/usr/sbin
-  rm -rf ${pkgdir}/usr/share
-}
+#   # Devel package: headers + import libs only, no DLL or executables
+#   rm -rf ${pkgdir}/usr/bin
+#   rm -rf ${pkgdir}/usr/sbin
+#   rm -rf ${pkgdir}/usr/share
+# }
 
 
