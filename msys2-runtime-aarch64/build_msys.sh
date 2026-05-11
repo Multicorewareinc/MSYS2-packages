@@ -27,7 +27,7 @@ makepkg -e
 echo "===== NEWLIB BUILD DONE ====="
 
 
-cat > /usr/lib/gcc/aarch64-pc-msys/15/include/c++/bits/c++config.h << 'CXXCONFIG'
+cat > /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++/bits/c++config.h << 'CXXCONFIG'
 #ifndef _GLIBCXX_CXX_CONFIG_H
 #define _GLIBCXX_CXX_CONFIG_H 1
 
