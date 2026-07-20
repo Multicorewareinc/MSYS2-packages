@@ -27,7 +27,13 @@ makepkg -e
 echo "===== NEWLIB BUILD DONE ====="
 
 
-cat > /usr/lib/gcc/aarch64-pc-msys/15/include/c++/bits/c++config.h << 'CXXCONFIG'
+# Stub the compiler's bits/c++config.h (needed to compile winsup). Resolve the
+# gcc private dir from the compiler -- do NOT hardcode "15"; the installed dir
+# may be "15.0.1", and the winsup compile's -isystem (derived the same way)
+# would not see a stub written to the wrong version dir.
+GCC_BASE="$(dirname "$(aarch64-pc-msys-gcc -print-libgcc-file-name)")"
+mkdir -p "${GCC_BASE}/include/c++/bits"
+cat > "${GCC_BASE}/include/c++/bits/c++config.h" << 'CXXCONFIG'
 #ifndef _GLIBCXX_CXX_CONFIG_H
 #define _GLIBCXX_CXX_CONFIG_H 1
 

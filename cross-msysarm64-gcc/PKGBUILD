@@ -4,7 +4,7 @@ _realname=gcc
 _target=aarch64-pc-msys
 pkgname="cross-msysarm64-${_realname}"
 pkgver=15.0.1
-pkgrel=1
+pkgrel=2
 pkgdesc="Cross GCC stage2 for aarch64-pc-msys (with full runtime)"
 arch=('i686' 'x86_64')
 url="https://gcc.gnu.org"
@@ -32,10 +32,12 @@ source=(
   0012-Handle-spaces-in-path-for-default-manifest.patch
   0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch
   0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch
+  9997-msys-libtool-shared.patch
   9998-aarch64-pc-msys-target.patch
   9999-msys-macro.patch
 )
 sha256sums=(
+  'SKIP'
   'SKIP'
   'SKIP'
   'SKIP'
@@ -63,6 +65,7 @@ prepare() {
     "${srcdir}"/0012-Handle-spaces-in-path-for-default-manifest.patch \
     "${srcdir}"/0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch \
     "${srcdir}"/0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch \
+    "${srcdir}"/9997-msys-libtool-shared.patch \
     "${srcdir}"/9998-aarch64-pc-msys-target.patch \
     "${srcdir}"/9999-msys-macro.patch
   # --- Verify stage1 compiler is present ---
@@ -72,32 +75,93 @@ prepare() {
     exit 1
   }
 
-  # # --- Verify real msys2-runtime is installed (not the stub) ---
-  # # libcygwin.a must be non-empty (stage1 stub was empty)
-  # _libcygwin=/usr/aarch64-pc-msys/lib/libcygwin.a
-  # if [ ! -f "${_libcygwin}" ]; then
-  #   echo "FATAL: libcygwin.a missing — install msys2-runtime-devel"
-  #   exit 1
-  # fi
-  # _size=$(stat -c%s "${_libcygwin}")
-  # if [ "${_size}" -lt 1024 ]; then
-  #   echo "FATAL: libcygwin.a is too small (${_size} bytes) — looks like the stub."
-  #   echo "       Install the real msys2-runtime-devel package first."
-  #   exit 1
-  # fi
-  # echo "libcygwin.a OK (${_size} bytes)"
-  cp $HOME/MSYS2-packages/msys2-runtime-aarch64/src/runtime-build/cygwin/libmsys-2.0.a /usr/aarch64-pc-msys/lib/
-  cp $HOME/MSYS2-packages/msys2-runtime-aarch64/src/newlib/libc.a /usr/aarch64-pc-msys/lib/
-  cp $HOME/MSYS2-packages/msys2-runtime-aarch64/src/newlib/libm.a /usr/aarch64-pc-msys/lib/
-  cp $HOME/MSYS2-packages/msys2-runtime-aarch64/src/newlib/libg.a /usr/aarch64-pc-msys/lib/
-  # --- Verify crt0.o is the real one ---
+  # --- Stage the stage-1 runtime libs into the sysroot -
+  # Build order is: stage-1 runtime (loose files in src/) -> THIS stage-2 gcc ->
+  # stage-2 runtime package. The stage-2 cross-msysarm64-runtime PACKAGE is built
+  # AFTER gcc, so gcc cannot depend on it (circular). Stage-1 is intentionally
+  # bootstrap-only and ships no package, so we still read its libs from src/ here.
+  # What changed for #3: this used to copy silently; now we hard-verify the crt0
+  # is the REAL one (references msys_crt0), never the bootstrap STUB (nop;ret) that
+  # makes every exe hang at startup. A missing/stub artifact is a fatal error.
+  _rt1="$HOME/MSYS2-packages/msys2-runtime-aarch64"
+  _rt1_rb="${_rt1}/src/runtime-build"
+  for _f in \
+    "${_rt1_rb}/cygwin/libmsys-2.0.a:libmsys-2.0.a" \
+    "${_rt1}/src/newlib/libc.a:libc.a" \
+    "${_rt1}/src/newlib/libm.a:libm.a"; do
+    _src="${_f%%:*}"; _dst="${_f##*:}"
+    if [ ! -f "${_src}" ]; then
+      echo "FATAL: stage-1 runtime artifact missing: ${_src}"
+      echo "       Build msys2-runtime-aarch64 (stage 1) before cross-msysarm64-gcc."
+      exit 1
+    fi
+    cp -f "${_src}" "/usr/aarch64-pc-msys/lib/${_dst}"
+  done
+
+  # The build system links stage-2 libstdc++ etc. with `-lcygwin`, but this MSYS2
+  # runtime names its import lib libmsys-2.0.a. Provide the libcygwin.a alias as a
+  # staged, verified artifact HERE rather than via an unexplained `ln -sf` at the
+  # top of build(). This build-time alias is needed because
+  # gcc stage-2 is built BEFORE the stage-2 cross-msysarm64-runtime package (the
+  # circular bootstrap), so the package-owned libcygwin.a that runtime package()
+  # ships (msys2-runtime-aarch64-stage-2: `ln -sf libmsys-2.0.a libcygwin.a`) does
+  # not exist in the sysroot yet. The FINAL installed toolchain gets libcygwin.a
+  # from that runtime package, not from this line.
+  ln -sf libmsys-2.0.a /usr/aarch64-pc-msys/lib/libcygwin.a
+  if [ ! -e /usr/aarch64-pc-msys/lib/libcygwin.a ]; then
+    echo "FATAL: failed to create libcygwin.a -> libmsys-2.0.a alias in sysroot"
+    exit 1
+  fi
+  echo "staged libcygwin.a alias -> libmsys-2.0.a (build-time; final copy is package-owned)"
+  # libg.a is a LEGACY "debug libc" that modern newlib often does not emit — stage
+  # it only if present (not fatal), matching the stage-2 runtime package.
+  if [ -f "${_rt1}/src/newlib/libg.a" ]; then
+    cp -f "${_rt1}/src/newlib/libg.a" /usr/aarch64-pc-msys/lib/libg.a
+  fi
+  echo "staged stage-1 runtime + newlib libs into sysroot"
+
+  # --- Stage the REAL crt0.o / gcrt0.o from the stage-1 build ---
+  # Step-14 (runtime stage 1) installs a bootstrap STUB crt0.o into the sysroot to
+  # break the circular link dep, then builds the REAL crt0.o at
+  # ${_rt1_rb}/cygwin/crt0.o but does NOT install it (stage-1 ships no package).
+  # On a fresh/CI box nothing stages the real one before this point, so the stub
+  # survives and the hard check below would (correctly) FATAL. Stage the real
+  # objects here from the stage-1 build tree, gated on the same symbols the stage-2
+  # runtime package() uses, so the sysroot has a real crt0 before gcc stage 2:
+  #   crt0.o  -> must reference msys_crt0   (nm 'U msys_crt0'); stub nop;ret has none
+  #   gcrt0.o -> the -pg startup, DEFINES _monstartup (nm 'T _monstartup'); optional
+  local _o _sym _grep _s
+  for _o in crt0.o gcrt0.o; do
+    if [ "${_o}" = "crt0.o" ]; then _sym="msys_crt0"; _grep="U msys_crt0"
+    else                            _sym="_monstartup"; _grep=" T _monstartup"; fi
+    _s="${_rt1_rb}/cygwin/${_o}"
+    if [ ! -f "${_s}" ]; then
+      if [ "${_o}" = "crt0.o" ]; then
+        echo "FATAL: real crt0.o not found at ${_s} — build msys2-runtime-aarch64 (stage 1) first."
+        exit 1
+      fi
+      echo "note: ${_o} not produced by stage-1 (optional) — skipping"
+      continue
+    fi
+    if ! aarch64-pc-msys-nm "${_s}" 2>/dev/null | grep -q "${_grep}"; then
+      echo "FATAL: ${_s} lacks '${_sym}' — looks like the bootstrap STUB; refusing to stage it."
+      exit 1
+    fi
+    cp -f "${_s}" "/usr/aarch64-pc-msys/lib/${_o}"
+    echo "staged real ${_o} into sysroot (has ${_sym})"
+  done
+
+  # --- Verify crt0.o is the real one (hard stub rejection) ---
+  # After the staging above the sysroot crt0.o must be the REAL one. Reject the
+  # bootstrap stub via its lack of an msys_crt0 reference rather than a fuzzy
+  # byte-size heuristic.
   _crt0=/usr/aarch64-pc-msys/lib/crt0.o
-  _crt0size=$(stat -c%s "${_crt0}" 2>/dev/null || echo 0)
-  if [ "${_crt0size}" -lt 512 ]; then
-    echo "WARNING: crt0.o may still be the bootstrap stub (${_crt0size} bytes)"
-    echo "         Make sure msys2-runtime-devel installed the real crt0.o"
+  if aarch64-pc-msys-nm "${_crt0}" 2>/dev/null | grep -q "U msys_crt0"; then
+    echo "crt0.o OK (real — references msys_crt0)"
   else
-    echo "crt0.o OK (${_crt0size} bytes)"
+    echo "FATAL: ${_crt0} is missing or still the bootstrap STUB (no msys_crt0 ref)."
+    echo "       Stage the real crt0.o from the stage-1 runtime build first."
+    exit 1
   fi
 
   # --- Verify key headers ---
@@ -110,7 +174,9 @@ prepare() {
 }
 
 build() {
-  ln -sf /usr/aarch64-pc-msys/lib/libmsys-2.0.a /usr/aarch64-pc-msys/lib/libcygwin.a
+  # NOTE: the libcygwin.a -> libmsys-2.0.a alias is now staged + verified in
+  # prepare(); the FINAL installed alias is owned by the
+  # stage-2 cross-msysarm64-runtime package.
   export lt_cv_deplibs_check_method='pass_all'
 
   mkdir -p ${srcdir}/gcc-build && cd ${srcdir}/gcc-build
@@ -161,49 +227,21 @@ build() {
 
   make all-gcc
 
-  # Fix 1: configure libgcc target to generate its Makefile, then patch it
-  # before actually building. We do this by running just the configure step.
-  _libgcc_mf="${srcdir}/gcc-build/aarch64-pc-msys/libgcc/Makefile"
-  if [ ! -f "${_libgcc_mf}" ]; then
-    # Trigger libgcc configure without building
-    make configure-target-libgcc
-  fi
-
-  # Now patch LIB2ADDEH — line 347 is the DW2 assignment, 348 is continuation
-  echo "--- Patching LIB2ADDEH to use SEH unwinder ---"
-  sed -n '345,352p' "${_libgcc_mf}"  # show before
-  sed -i '347s|.*|LIB2ADDEH = $(srcdir)/unwind-seh.c $(srcdir)/unwind-sjlj.c $(srcdir)/unwind-c.c|' \
-    "${_libgcc_mf}"
-  sed -i '348d' "${_libgcc_mf}"
-  grep "^LIB2ADDEH" "${_libgcc_mf}"  # verify
-
+  # SEH exception unwinder — now handled structurally, no post-build hacks
+  #. Two pieces make this work:
+  #   * The SEH unwind sources (unwind-seh/sjlj/c) are selected by libgcc's own
+  #     config.host: aarch64-*-msys* -> tmake_eh_file=mingw/t-seh-eh (patch
+  #     9998), so LIB2ADDEH already resolves to the SEH set. The old Fix-1 sed
+  #     of the generated libgcc Makefile was a no-op.
+  #   * Patch 9997 teaches gcc/configure that aarch64-*-msys* is a shared-library
+  #     (PE/Win32) host, so libtool no longer forces enable_shared=no. The driver
+  #     is then compiled WITH -DENABLE_SHARED_LIBGCC and emits "-lgcc_s -lgcc",
+  #     so _Unwind_*/__gxx_personality_seh0 resolve from the shared libgcc DLL
+  #     (cyggcc_s-seh-1.dll / libgcc_s.dll.a). This removes the need for the old
+  #     Fix-2 (ar-merging EH objects into libgcc.a) and Fix-3 (appending
+  #     libkernel32.a to the libstdc++ libtool postdeps).
   make all-target-libgcc
-
-  # Fix 2: merge EH objects into libgcc.a so -lgcc finds _Unwind_*
-  _libgcc_dir="${srcdir}/gcc-build/aarch64-pc-msys/libgcc"
-  pushd "${_libgcc_dir}"
-  aarch64-pc-msys-ar x libgcc_eh.a unwind-seh.o unwind-sjlj.o unwind-c.o
-  aarch64-pc-msys-ar rcs libgcc.a unwind-seh.o unwind-sjlj.o unwind-c.o
-  aarch64-pc-msys-ar rcs "${srcdir}/gcc-build/gcc/libgcc.a" \
-    unwind-seh.o unwind-sjlj.o unwind-c.o
-  popd
-
-  # Fix 3: patch libstdc++ libtool postdeps ordering — kernel32 lands before
-  # lgcc so unwind-seh.o's __imp_Rtl* refs are unresolved. Patch GLIBCXX_LIBS
-  # and touch libstdc++.la after manual link if needed.
-  # configure-target-libstdc++-v3 generates the libtool script
-  make configure-target-libstdc++-v3 || true
-  _libtool="${srcdir}/gcc-build/aarch64-pc-msys/libstdc++-v3/libtool"
-  _libstdcxx_mf="${srcdir}/gcc-build/aarch64-pc-msys/libstdc++-v3/src/Makefile"
-
-  # Patch GLIBCXX_LIBS to add kernel32 after lgcc via start-group in libtool
-  # Since libtool rejects -Wl flags in postdeps, we patch archive_cmds instead
-  sed -i \
-    "s|postdeps=\" -lgcc -lcygwin -ladvapi32 -lshell32 -luser32 -lkernel32 -lgcc \"|postdeps=\" -lgcc -lcygwin -ladvapi32 -lshell32 -luser32 -lkernel32 -lgcc \"\npostdep_objects=\"\${postdep_objects} /usr/aarch64-pc-msys/lib/libkernel32.a\"|" \
-    "${_libtool}" || true
-
   make all-target-libstdc++-v3
-
   make all-target-libgomp   || echo "WARNING: libgomp failed"
 }
 package() {
