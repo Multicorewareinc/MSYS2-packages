@@ -1,7 +1,7 @@
 # Maintainer: Windows on ARM Experiments
 pkgname="cross-msysarm64-w32api-headers"
 pkgver=13.0.0
-pkgrel=5
+pkgrel=7
 pkgdesc="Win32 API headers for aarch64-pc-msys sysroot (WoA)"
 arch=('x86_64')
 url="https://github.com/Windows-on-ARM-Experiments/mingw-woarm64"
@@ -12,12 +12,25 @@ makedepends=("git" "autotools")
 
 source=(
   "mingw-w64::git+https://github.com/Windows-on-ARM-Experiments/mingw-woarm64.git"
+  0001-basetsd-aarch64-64bit-pointers.patch
 )
 
-sha256sums=('SKIP')
+sha256sums=('SKIP'
+            'SKIP')
 
 _target=aarch64-pc-msys
 _sysroot=/usr/${_target}
+
+prepare() {
+  cd ${srcdir}/mingw-w64
+  # Source-level replacement for the old post-build basetsd.h `sed`: guard the
+  # 64-bit-pointer INT_PTR/LONG_PTR/HANDLE_PTR typedefs on
+  # __aarch64__ as well as _WIN64, since the GNU aarch64-pc-msys toolchain does
+  # not predefine _WIN64. A named, reviewable, upstreamable patch.
+  git apply --whitespace=fix \
+    "${srcdir}"/0001-basetsd-aarch64-64bit-pointers.patch
+}
+
 
 build() {
   mkdir -p ${srcdir}/headers-build
@@ -53,9 +66,33 @@ package() {
   # cp -r ${pkgdir}${_sysroot}/usr/include/. \
   #   ${pkgdir}${_sysroot}/sys-include/
 
-  # Fix _WIN64 for aarch64 pointer sizes in all locations
-  find ${pkgdir}${_sysroot} -name "basetsd.h" -exec \
-    sed -i 's/#ifdef _WIN64/#if defined(_WIN64) || defined(__aarch64__)/' {} \;
+  # NOTE: basetsd.h's 64-bit-pointer guard is now fixed at the source level in
+  # prepare() (0001-basetsd-aarch64-64bit-pointers.patch) instead of a post-build
+  # `sed` here.
+
+  # --- Drop the C-library headers; keep ONLY the Win32 API headers ---
+  # mingw-w64-headers ships MSVCRT-flavored libc headers (stdio.h, signal.h,
+  # unistd.h, ...) alongside the Win32 API set. For an aarch64-pc-msys target
+  # the libc layer is owned by newlib + cygwin (cross-msysarm64-runtime-devel,
+  # which ships the __aarch64__-patched cygwin/signal.h). Letting w32api-headers
+  # own them both file-conflicts with runtime-devel at `pacman -U` AND would make
+  # the wrong (mingw CRT) headers authoritative. Strip them so the two packages
+  # are disjoint regardless of install order (build script AND the consumer's
+  # single `pacman -U *.pkg.tar.zst`).
+  _crt_headers=(
+    assert.h complex.h ctype.h dirent.h errno.h error.h fcntl.h fenv.h ftw.h
+    getopt.h ieeefp.h inttypes.h io.h libgen.h limits.h locale.h malloc.h
+    math.h memory.h process.h search.h setjmp.h signal.h stdint.h stdio.h
+    stdlib.h string.h strings.h time.h uchar.h unistd.h utime.h wchar.h wctype.h
+    sys/cdefs.h sys/fcntl.h sys/file.h sys/param.h sys/stat.h sys/time.h
+    sys/timeb.h sys/types.h sys/unistd.h sys/utime.h
+  )
+  for _base in ${_sysroot} ${_sysroot}/usr; do
+    for _h in "${_crt_headers[@]}"; do
+      rm -f "${pkgdir}${_base}/include/${_h}" "${pkgdir}${_base}/sys-include/${_h}"
+    done
+  done
+  echo "--- stripped ${#_crt_headers[@]} libc headers (owned by runtime-devel) ---"
 
   echo "--- cross-msysarm64-w32api-headers check ---"
   [ -f ${pkgdir}${_sysroot}/usr/include/windows.h ] && \

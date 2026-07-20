@@ -1,7 +1,7 @@
 # Maintainer: Windows on ARM Experiments
 _realname=msys2-runtime
 pkgbase=${_realname}
-pkgname=(${_realname} ${_realname}-devel)
+pkgname=cross-msysarm64-newlib
 pkgver=3.6.7
 pkgrel=4
 pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-msys"
@@ -10,7 +10,7 @@ options=('!strip' '!buildflags')
 url="https://cygwin.com"
 license=('GPL')
 makedepends=(
-  "cross-msysarm64-gcc-stage1"        # provides: aarch64-pc-msys-gcc, libgcc.a, crtbegin/end.o
+  "cross-msysarm64-gcc"               # full stage-2 gcc (provides aarch64-pc-msys-gcc, libgcc.a, crtbegin/end.o, libstdc++); stage1 is removed/superseded
   "cross-msysarm64-binutils"          # provides: aarch64-pc-msys-ld, ar, etc.
   "cross-msysarm64-w32api-headers"    # provides: sysroot/include/w32api/*.h
   "cross-msysarm64-runtime-devel"     # provides: sysroot/include/ (newlib + cygwin headers)
@@ -97,22 +97,43 @@ prepare() {
   # echo "aarch64/fastcwd.cc injected from startdir"
 
   # --- Real: Win32 import libs ---
-  # These come from cross-msysarm64-crt (--enable-w32api build).
-  # They should already be in /usr/aarch64-pc-msys/lib/w32api/ with symlinks.
-  # Just verify here — do NOT stub these, stubs will break the link.
-  echo "--- Verifying Win32 import libs from cross-msysarm64-crt ---"
+  # From mingw-w64-cross-mingwarm64-crt (installed into /opt/aarch64-w64-mingw32/lib).
+  # winsup links them from the MSYS sysroot /usr/aarch64-pc-msys/lib. The full
+  # toolchain build's stage-1 runtime stages them there; build-test runs only
+  # stage-2, so copy them here ourselves (same as stage-1). Idempotent.
+  echo "--- Staging Win32 import libs from /opt/aarch64-w64-mingw32/lib ---"
   _ok=1
   for lib in kernel32 user32 advapi32 shell32 ntdll; do
     if [ -f /usr/aarch64-pc-msys/lib/lib${lib}.a ]; then
-      echo "  lib${lib}.a OK"
+      echo "  lib${lib}.a already present"
+    elif [ -f /opt/aarch64-w64-mingw32/lib/lib${lib}.a ]; then
+      cp -f /opt/aarch64-w64-mingw32/lib/lib${lib}.a /usr/aarch64-pc-msys/lib/
+      echo "  lib${lib}.a staged from mingw sysroot"
     else
-      echo "  ERROR: lib${lib}.a MISSING — cross-msysarm64-crt not installed correctly"
+      echo "  ERROR: lib${lib}.a not in /usr/aarch64-pc-msys/lib NOR /opt/aarch64-w64-mingw32/lib — is mingw-w64-cross-mingwarm64-crt installed?"
       _ok=0
     fi
   done
   if [ $_ok -ne 1 ]; then
-    echo "FATAL: Missing Win32 import libs. Install cross-msysarm64-crt first."
+    echo "FATAL: Missing Win32 import libs. Install mingw-w64-cross-mingwarm64-crt first."
     exit 1
+  fi
+
+  # --- Stub: default-manifest.o ---
+  # The linker auto-includes default-manifest.o (PE manifest, not part of the dll).
+  # The full toolchain build's stage-1 runtime creates this empty stub in
+  # /usr/aarch64-pc-msys/lib/; build-test runs only stage-2 so it's absent ->
+  # winsup/cygserver link fails "cannot find default-manifest.o". Create it here.
+  # NB: this MUST live in newlib-pkgbuild's prepare() — it is the ONLY prepare()
+  # that runs under build-msys.sh (STEP 1 `makepkg -o`); STEP 2 uses `makepkg -e`
+  # (--noextract), which SKIPS the root PKGBUILD's prepare(). It stages into the
+  # shared sysroot, which persists to STEP 2's winsup link. Idempotent. (crt0.o is
+  # NOT stubbed: the cross-msysarm64-runtime release ships the real one.)
+  if [ ! -f /usr/aarch64-pc-msys/lib/default-manifest.o ]; then
+    echo "" > /tmp/dm_empty.c
+    aarch64-pc-msys-gcc -c /tmp/dm_empty.c -o /usr/aarch64-pc-msys/lib/default-manifest.o \
+      && echo "default-manifest.o stub installed" \
+      || echo "WARNING: failed to create default-manifest.o stub"
   fi
 
   # --- libstdc++ header shadow removal ---
@@ -145,6 +166,14 @@ prepare() {
   cp -r ${srcdir}/${_realname}/winsup/cygwin/include/* \
         /usr/aarch64-pc-msys/include/
 
+  # winsup's ntdll.h does `#include <w32api/ntstatus.h>`, but cross-msysarm64-
+  # w32api-headers installs the Win32 headers FLAT into include/, not under
+  # include/w32api/. Build the w32api/ mirror so the include resolves. The full
+  # toolchain build's stage-1 runtime creates this; build-test runs only stage-2,
+  # so do it here too. Idempotent.
+  mkdir -p /usr/aarch64-pc-msys/include/w32api
+  cp -rf /usr/aarch64-pc-msys/include/*.h /usr/aarch64-pc-msys/include/w32api/ 2>/dev/null || true
+
   # --- Verify aarch64-specific patches are present ---
   echo "--- Header patch verification ---"
   grep -c "__aarch64__" \
@@ -171,6 +200,14 @@ build() {
   export ac_cv_header_rpc_xdr_h=yes
   export ac_cv_func_xdrmem_create=yes
   export newlib_cv_xdr_dir=yes
+  # The top-level configure recurses into configure-target-winsup, which probes
+  # `sframe_decode in -lsframe` / `ZSTD_isError in -lzstd`. Under cross-bootstrap
+  # the target compiler is in AC_NO_EXECUTABLES mode, so those AC_CHECK_LIB *link*
+  # tests are illegal -> "link tests are not allowed after AC_NO_EXECUTABLES" and
+  # the build aborts. Pre-seed the cached results to "no" (same as the root winsup
+  # PKGBUILD build()), so configure skips the link tests. We don't link sframe/zstd.
+  export ac_cv_lib_sframe_sframe_decode=no
+  export ac_cv_lib_zstd_ZSTD_isError=no
   unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
   # Do NOT export CC/CXX here — let configure use native gcc for host tools
   # and CC_FOR_TARGET for building target libraries (newlib, winsup)
@@ -183,23 +220,45 @@ build() {
 
   mkdir -p ${srcdir}/runtime-build
   cd ${srcdir}/runtime-build
-  GCC_VER=15
-  GCC_BASE=/usr/lib/gcc/aarch64-pc-msys/${GCC_VER}
+  # Derive the gcc private dir from the compiler itself -- do NOT hardcode the
+  # version. -nostdinc drops gcc's builtin include path, so we re-add it via
+  # -isystem ${GCC_BASE}/include. If GCC_BASE points at the wrong version dir
+  # (e.g. hardcoded "15" when gcc installed "15.0.1"), that -isystem is a dead
+  # path, gcc finds no <stddef.h>/<stdarg.h>, and newlib's reent.h falls through
+  # to the mingw sysroot copies -> "#error Only Win32 target is supported!".
+  # `-print-libgcc-file-name` resolves to .../<ver>/libgcc.a; its dirname is the
+  # correct private dir for whatever gcc is actually installed.
+  GCC_BASE="$(dirname "$(aarch64-pc-msys-gcc -print-libgcc-file-name)")"
+  [ -f "${GCC_BASE}/include/stddef.h" ] || {
+    echo "FATAL: gcc include dir not found under ${GCC_BASE}/include (no stddef.h)"
+    echo "       aarch64-pc-msys-gcc -print-libgcc-file-name = $(aarch64-pc-msys-gcc -print-libgcc-file-name)"
+    ls -la "${GCC_BASE}/include" 2>/dev/null | head
+    exit 1
+  }
+  echo "GCC_BASE resolved to ${GCC_BASE} (stddef.h present)"
 
   # Sysroot-style include (merged newlib + cygwin)
   SYSROOT_INC=/usr/aarch64-pc-msys/include
 
-export CFLAGS="\
+  # Cross flags for the AARCH64 TARGET libraries (newlib/winsup) only. These
+  # carry -nostdinc + the aarch64 cross-sysroot -isystem dirs. They must NOT
+  # leak into the top-level configure's NATIVE host-compiler probe: that probe
+  # links + RUNS a tiny x86_64 conftest, and a leaked -nostdinc/aarch64 include
+  # set makes configure abort with "cannot run C compiled programs". So build
+  # the string in a local, export it ONLY through the *_FOR_TARGET channel, and
+  # leave plain CFLAGS/CPPFLAGS unset in the environment -- the host probe then
+  # uses clean defaults (and the explicit command-line CFLAGS=-O2 below).
+  _target_cflags="\
 -nostdinc \
 -isystem ${GCC_BASE}/include \
 -isystem ${GCC_BASE}/include-fixed \
 -isystem ${SYSROOT_INC} \
 -D_MB_CAPABLE=1 \
 "
-  
-  export CPPFLAGS="$CFLAGS"
-  export CFLAGS_FOR_TARGET="$CFLAGS"
-  export CPPFLAGS_FOR_TARGET="$CFLAGS"
+
+  export CFLAGS_FOR_TARGET="${_target_cflags}"
+  export CPPFLAGS_FOR_TARGET="${_target_cflags}"
+  unset CFLAGS CPPFLAGS
 
   # GCC_VER=15.0.1
   # GCC_BASE=/usr/lib/gcc/aarch64-pc-msys/${GCC_VER}
@@ -268,43 +327,44 @@ export CFLAGS="\
 int main() { return 0; }
 EOF
 
-  ${CC} ${CFLAGS} mb_check.c -o mb_check || {
+  ${CC:-aarch64-pc-msys-gcc} ${_target_cflags} mb_check.c -o mb_check || {
     echo "❌ MB_CAPABLE check failed"
     exit 1
   }
 
   echo "✅ MB_CAPABLE is defined"
-  # 🔍 MB_CAPABLE CHECK ENDS HERE  
-  make -j$(nproc)
+  # 🔍 MB_CAPABLE CHECK ENDS HERE
+  # STEP 1 of build-msys.sh builds ONLY newlib. A bare `make` runs the top-level
+  # `all` target, which also builds all-target-winsup — but winsup here would
+  # compile WITHOUT the stage-2 root PKGBUILD's required workarounds (the
+  # bits/c++config.h stub that build-msys.sh writes only AFTER this step; the
+  # netdrive.cc -O0 ICE fix; -mno-use-libstdc-wrappers removal; msys2_path_conv;
+  # cygserver/LIBSERVER) -> e.g. cxx.cc fails 'fatal error: new: No such file'.
+  # Winsup is built by STEP 2 (root PKGBUILD) which has all of those. So restrict
+  # STEP 1 to newlib; STEP 2 copies this newlib tree and builds winsup against it.
+  make -j$(nproc) all-target-newlib
 }
 
 
 
 
-package_msys2-runtime() {
-  pkgdesc="Cygwin POSIX emulation engine (aarch64-pc-msys)"
-  conflicts=('catgets' 'libcatgets')
-  replaces=('catgets' 'libcatgets')
-
-  cd ${srcdir}/runtime-build
-  make DESTDIR=${pkgdir} install
-
-  # Runtime package: DLL only, no headers or import libs
-  rm -rf ${pkgdir}/usr/include
-  rm -rf ${pkgdir}/usr/lib
-}
-
-package_msys2-runtime-devel() {
-  pkgdesc="Headers and import lib for msys2-runtime (aarch64-pc-msys)"
-  depends=("msys2-runtime=${pkgver}")
-  conflicts=('catgets-devel' 'libcatgets-devel')
-  replaces=('catgets-devel' 'libcatgets-devel')
-
-  cd ${srcdir}/runtime-build
-  make DESTDIR=${pkgdir} install
-
-  # Devel package: headers + import libs only, no DLL or executables
-  rm -rf ${pkgdir}/usr/bin
-  rm -rf ${pkgdir}/usr/sbin
-  rm -rf ${pkgdir}/usr/share
+package() {
+  # Cross package: ship the newlib C runtime libs into the SYSROOT
+  # (/usr/aarch64-pc-msys/lib), NOT the native /usr — these are aarch64 objects
+  # consumed by the aarch64-pc-msys cross compiler. `make DESTDIR install` is
+  # deliberately NOT used: it targets --prefix=/usr and would collide with the
+  # host x86_64 MSYS2 runtime on the build/CI machine.
+  pkgdesc="newlib C runtime libs for the aarch64-pc-msys cross toolchain"
+  install -d "${pkgdir}/usr/aarch64-pc-msys/lib"
+  local _l _s
+  for _l in libc.a libm.a libg.a; do
+    _s="$(find "${srcdir}/runtime-build" "${srcdir}" -name "${_l}" -path '*newlib*' 2>/dev/null | head -1)"
+    [ -z "${_s}" ] && _s="$(find "${srcdir}/runtime-build" "${srcdir}" -name "${_l}" 2>/dev/null | head -1)"
+    if [ -n "${_s}" ]; then
+      install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-msys/lib/${_l}"
+      echo "packaged ${_l} <- ${_s}"
+    else
+      echo "WARNING: newlib ${_l} not found in build tree"
+    fi
+  done
 }

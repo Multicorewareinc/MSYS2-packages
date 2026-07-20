@@ -3,7 +3,7 @@
 _realname=msys2-runtime
 pkgname="cross-msysarm64-runtime-devel"
 pkgver=3.6.7
-pkgrel=3
+pkgrel=4
 pkgdesc="Cross msys2-runtime headers for aarch64-pc-msys sysroot (newlib + cygwin)"
 arch=('x86_64')
 url="https://cygwin.com"
@@ -19,6 +19,27 @@ sha256sums=('SKIP')
 
 _target=aarch64-pc-msys
 _sysroot=/usr/${_target}
+
+# Header supplying the utsname layout for the aarch64-pc-msys sysroot.
+_utsname_hdr="winsup/cygwin/include/sys/utsname.h"
+
+prepare() {
+  # ABI guard: msys-2.0.dll is built from the msys2-runtime repo, where
+  # struct utsname::sysname is [_UTSNAME_LENGTH + 1]. This header (from
+  # cygwin-dev) historically declared it [_UTSNAME_LENGTH], a 1-byte
+  # mismatch that shifted every field after sysname — uname(2) wrote
+  # utsname.machine at the DLL offset while apps read it one byte earlier,
+  # so `uname -m` came back empty on ARM64. Enforce the runtime layout on
+  # the cloned source so the sysroot header and the DLL agree on offsets.
+  # Idempotent: only rewrites the line while it is still the old form.
+  local hdr="${srcdir}/${_realname}/${_utsname_hdr}"
+  if grep -q 'char sysname\[_UTSNAME_LENGTH\][[:space:]]*;' "${hdr}"; then
+    echo "prepare: patching utsname.h sysname -> _UTSNAME_LENGTH + 1 (runtime ABI)"
+    sed -i 's/char sysname\[_UTSNAME_LENGTH\][[:space:]]*;/char sysname[_UTSNAME_LENGTH + 1];/' "${hdr}"
+  fi
+  grep -q 'char sysname\[_UTSNAME_LENGTH + 1\];' "${hdr}" \
+    || { echo "ERROR: utsname.h sysname not sized to _UTSNAME_LENGTH + 1"; return 1; }
+}
 
 package() {
   _sysroot_bare=/usr/${_target}
@@ -55,4 +76,22 @@ package() {
   grep -c "__aarch64__" \
     ${pkgdir}/${_sysroot_bare}/include/cygwin/signal.h 2>/dev/null && \
     echo "signal.h aarch64 OK" || echo "WARNING: signal.h missing aarch64"
+
+  # ABI guard (hard fail): every installed copy of utsname.h must size
+  # sysname to _UTSNAME_LENGTH + 1 so its field offsets match msys-2.0.dll.
+  # A mismatch silently breaks uname(2).machine on ARM64 (see prepare()).
+  local bad=0
+  for uts in \
+    ${pkgdir}/${_sysroot_bare}/sys-include/sys/utsname.h \
+    ${pkgdir}/${_sysroot_bare}/include/sys/utsname.h \
+    ${pkgdir}/${_sysroot_usr}/sys-include/sys/utsname.h \
+    ${pkgdir}/${_sysroot_usr}/include/sys/utsname.h; do
+    if grep -q 'char sysname\[_UTSNAME_LENGTH + 1\];' "${uts}"; then
+      echo "utsname ABI OK: ${uts}"
+    else
+      echo "ERROR: wrong utsname sysname ABI in ${uts}"
+      bad=1
+    fi
+  done
+  [ "${bad}" -eq 0 ] || return 1
 }

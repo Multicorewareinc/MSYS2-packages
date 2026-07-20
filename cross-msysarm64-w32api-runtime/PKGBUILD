@@ -1,0 +1,84 @@
+# Maintainer: Windows on ARM Experiments
+#
+# Win32 API import libs for the aarch64-pc-msys cross sysroot.
+#
+# This is the aarch64 counterpart of the x64 `msys2-w32api-runtime` package:
+# both build mingw-w64-crt with `--enable-w32api` and ship the resulting Win32
+# API import libraries (libkernel32/user32/advapi32/shell32/ntdll.a, ...) so
+# the runtime/toolchain can link against the Windows API.
+#
+# x64 installs them into the host sysroot (/usr/lib); the cross build installs
+# them into the cross sysroot (/usr/aarch64-pc-msys/lib) so the host x86_64
+# MSYS2 is never touched. Source + arm64 configure args mirror the existing
+# `mingw-w64-cross-mingwarm64-crt` package (same Windows-on-ARM fork, built the
+# same way), so the libs are identical to the ones previously hand-copied from
+# ${HOME}/.../mingw-w64-cross-mingwarm64-crt — this just packages them properly.
+
+pkgname="cross-msysarm64-w32api-runtime"
+pkgver=13.0.0
+pkgrel=1
+pkgdesc="Win32 API import libs for aarch64-pc-msys sysroot (WoA)"
+arch=('x86_64')
+url="https://github.com/Windows-on-ARM-Experiments/mingw-woarm64"
+license=('custom')
+options=('!strip' 'staticlibs' '!emptydirs' '!buildflags')
+depends=("cross-msysarm64-w32api-headers")
+makedepends=(
+  "git"
+  "autotools"
+  "mingw-w64-cross-mingwarm64-gcc"       # provides aarch64-w64-mingw32-gcc
+  "mingw-w64-cross-mingwarm64-binutils"  # provides aarch64-w64-mingw32-{ar,ld,...}
+  "mingw-w64-cross-mingwarm64-headers"   # mingw w32api headers in /opt/aarch64-w64-mingw32/include
+)
+source=(
+  "mingw-w64::git+https://github.com/Windows-on-ARM-Experiments/mingw-woarm64.git#branch=woarm64"
+)
+sha256sums=('SKIP')
+
+_target=aarch64-pc-msys
+_mingw_host=aarch64-w64-mingw32
+_sysroot=/usr/${_target}
+
+prepare() {
+  cd "${srcdir}/mingw-w64/mingw-w64-crt"
+  autoreconf -vfi
+}
+
+build() {
+  mkdir -p "${srcdir}/w32api-build"
+  cd "${srcdir}/w32api-build"
+
+  unset CC CXX
+
+  # Mirror mingw-w64-cross-mingwarm64-crt: aarch64 host, ucrt default, arm64-only
+  # libs, plus --enable-w32api (the x64 msys2-w32api-runtime switch) so the Win32
+  # API import libs are produced. Install prefix is the cross sysroot.
+  "${srcdir}/mingw-w64/mingw-w64-crt/configure" \
+    --prefix=${_sysroot} \
+    --build=${CHOST} \
+    --host=${_mingw_host} \
+    --enable-w32api \
+    --with-default-msvcrt=ucrt \
+    --disable-lib32 --disable-lib64 --disable-libarm32 --enable-libarm64 \
+    --disable-dependency-tracking
+
+  make
+}
+
+package() {
+  cd "${srcdir}/w32api-build"
+
+  # Lands the import libs (and the mingw CRT objects, as x64 does) under
+  # ${pkgdir}/usr/aarch64-pc-msys/lib — the cross-sysroot analogue of x64's /usr/lib.
+  make DESTDIR=${pkgdir} install
+
+  echo "--- cross-msysarm64-w32api-runtime check ---"
+  local _l
+  for _l in libkernel32.a libuser32.a libadvapi32.a libshell32.a libntdll.a; do
+    if [ -f "${pkgdir}${_sysroot}/lib/${_l}" ]; then
+      echo "  ${_l} OK"
+    else
+      echo "  WARNING: ${_l} MISSING from ${_sysroot}/lib"
+    fi
+  done
+}

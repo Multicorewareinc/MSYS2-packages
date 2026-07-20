@@ -2,16 +2,16 @@
 
 _realname=msys2-runtime
 pkgbase=${_realname}
-pkgname=(${_realname} ${_realname}-devel)
+pkgname=cross-msysarm64-runtime
 pkgver=3.6.7
-pkgrel=4
+pkgrel=5
 pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-msys"
 arch=('x86_64')
 options=('!strip' '!buildflags')
 url="https://cygwin.com"
 license=('GPL')
 makedepends=(
-  "cross-msysarm64-gcc-stage1"        # provides: aarch64-pc-msys-gcc, libgcc.a, crtbegin/end.o
+  "cross-msysarm64-gcc"               # full stage-2 gcc (provides aarch64-pc-msys-gcc, libgcc.a, crtbegin/end.o, libstdc++); stage1 is removed/superseded
   "cross-msysarm64-binutils"          # provides: aarch64-pc-msys-ld, ar, etc.
   "cross-msysarm64-w32api-headers"    # provides: sysroot/include/w32api/*.h
   "cross-msysarm64-runtime-devel"     # provides: sysroot/include/ (newlib + cygwin headers)
@@ -45,13 +45,30 @@ prepare() {
 
   # --- Real: libgcc.a ---
   # From cross-msysarm64-gcc-stage1. Copy to sysroot/lib for linker discovery.
-  cp /usr/lib/gcc/aarch64-pc-msys/15/libgcc.a \
+  # Resolve the real path from the compiler (version-proof; -print-libgcc-file-name
+  # IS the absolute path to libgcc.a) -- never hardcode the gcc version dir.
+  cp "$(aarch64-pc-msys-gcc -print-libgcc-file-name)" \
     /usr/aarch64-pc-msys/lib/libgcc.a
   echo "libgcc.a from gcc-stage1 installed"
 
-  sed -i '1s/^/#pragma GCC optimize("O0")\n/' \
-    ${srcdir}/${_realname}/winsup/cygwin/devices.cc
-  echo "devices.cc ICE workaround applied"
+  # --- Stub: default-manifest.o ---
+  # The linker auto-includes default-manifest.o for PE manifests; it's not part
+  # of the dll itself. The full toolchain build's stage-1 runtime
+  # (msys2-runtime-aarch64/PKGBUILD) creates this empty stub in the MSYS sysroot
+  # /usr/aarch64-pc-msys/lib/. build-test runs only stage-2, so create it here
+  # too — else the winsup/cygserver link fails "cannot find default-manifest.o".
+  # (crt0.o is NOT stubbed here: the cross-msysarm64-runtime release ships the
+  # real one, and apply-crt0-fix re-stages it after the build.) Idempotent.
+  if [ ! -f /usr/aarch64-pc-msys/lib/default-manifest.o ]; then
+    echo "" > /tmp/dm_empty.c
+    aarch64-pc-msys-gcc -c /tmp/dm_empty.c -o /usr/aarch64-pc-msys/lib/default-manifest.o
+    echo "default-manifest.o stub installed"
+  fi
+
+  # devices.cc: the old #pragma GCC optimize("O0") hack was removed.
+  # At the build's -O1 it compiles cleanly (the ldp_fusion SIGSEGV is -O2-only);
+  # the per-object make rule below adds -mno-early-ldp-fusion so it also stays
+  # safe if the tree is ever moved to -O2.
 
   # mkdir -p ${srcdir}/${_realname}/winsup/cygwin/aarch64
   # cp ${startdir}/winsup/cygwin/aarch64/fastcwd.cc \
@@ -59,21 +76,29 @@ prepare() {
   # echo "aarch64/fastcwd.cc injected from startdir"
 
   # --- Real: Win32 import libs ---
-  # These come from cross-msysarm64-crt (--enable-w32api build).
-  # They should already be in /usr/aarch64-pc-msys/lib/w32api/ with symlinks.
-  # Just verify here — do NOT stub these, stubs will break the link.
-  echo "--- Verifying Win32 import libs from cross-msysarm64-crt ---"
+  # These now come from the cross-msysarm64-w32api-runtime PACKAGE, which installs
+  # libkernel32/user32/advapi32/shell32/ntdll.a directly into the MSYS cross sysroot
+  # /usr/aarch64-pc-msys/lib/. The winsup link expects them there, so
+  # a package-based build finds them already present and does NO /opt copy.
+  # LEGACY FALLBACK: if the w32api-runtime package is not installed (e.g. a partial
+  # build), fall back to copying from the mingw sysroot /opt/aarch64-w64-mingw32/lib/
+  # (installed by mingw-w64-cross-mingwarm64-crt) — with a WARNING so it is obvious the
+  # build is not yet on the packaged path. Idempotent either way.
+  echo "--- Ensuring Win32 import libs are in /usr/aarch64-pc-msys/lib ---"
   _ok=1
   for lib in kernel32 user32 advapi32 shell32 ntdll; do
     if [ -f /usr/aarch64-pc-msys/lib/lib${lib}.a ]; then
-      echo "  lib${lib}.a OK"
+      echo "  lib${lib}.a present in cross sysroot (from cross-msysarm64-w32api-runtime)"
+    elif [ -f /opt/aarch64-w64-mingw32/lib/lib${lib}.a ]; then
+      cp -f /opt/aarch64-w64-mingw32/lib/lib${lib}.a /usr/aarch64-pc-msys/lib/
+      echo "  WARNING: lib${lib}.a copied from /opt (legacy fallback) — install cross-msysarm64-w32api-runtime to use the packaged path"
     else
-      echo "  ERROR: lib${lib}.a MISSING — cross-msysarm64-crt not installed correctly"
+      echo "  ERROR: lib${lib}.a not in /usr/aarch64-pc-msys/lib NOR /opt/aarch64-w64-mingw32/lib — install cross-msysarm64-w32api-runtime (or mingw-w64-cross-mingwarm64-crt)"
       _ok=0
     fi
   done
   if [ $_ok -ne 1 ]; then
-    echo "FATAL: Missing Win32 import libs. Install cross-msysarm64-crt first."
+    echo "FATAL: Missing Win32 import libs. Install cross-msysarm64-w32api-runtime first."
     exit 1
   fi
 
@@ -105,7 +130,14 @@ prepare() {
   cp -rf ${srcdir}/${_realname}/winsup/cygwin/include/. \
     /usr/aarch64-pc-msys/include/
 
-  # --- Verify aarch64-specific patches are present ---
+  # winsup's ntdll.h does `#include <w32api/ntstatus.h>`, but cross-msysarm64-
+  # w32api-headers installs the Win32 headers FLAT into include/ (ntstatus.h,
+  # windows.h, ...), not under include/w32api/. Build the w32api/ mirror so the
+  # angle-bracket include resolves. The full toolchain build's stage-1 runtime
+  # creates this mirror (msys2-runtime-aarch64/PKGBUILD); build-test runs only
+  # stage-2, so do it here too. Idempotent.
+  mkdir -p /usr/aarch64-pc-msys/include/w32api
+  cp -rf /usr/aarch64-pc-msys/include/*.h /usr/aarch64-pc-msys/include/w32api/ 2>/dev/null || true
   echo "--- Header patch verification ---"
   grep -c "__aarch64__" \
     /usr/aarch64-pc-msys/sys-include/cygwin/signal.h && \
@@ -147,10 +179,20 @@ build() {
   which aarch64-w64-mingw32-g++ || \
     echo "WARNING: mingw aarch64 g++ not found"
 
-  find ${srcdir}/${_realname}/newlib/libm -name "Makefile.am" | while read f; do
-    sed -i '/e_acoshl\|e_acosl\|e_asinhl\|e_asinl\|e_atanhl\|e_atanl\|e_cosl\|e_sinl\|e_tanl\|e_fmodl\|e_hypotl\|e_logl\|e_log2l\|e_powl\|e_remainderl\|e_sqrtl\|invtrig\|k_cosl\|k_sinl\|k_tanl\|s_atanl\|s_ceill\|s_cosl\|s_exp2l\|s_expl\|s_fabsl\|s_floorl\|s_frexpl\|s_ilogbl\|s_ldexpl\|s_logl\|s_modfl\|s_rintl\|s_roundl\|s_scalbnl\|s_sinl\|s_tanl\|s_truncl/d' "$f"
-  done
-  echo "newlib libm/ld/ long double files patched for aarch64"
+  # NOTE: the old "strip long-double libm files" step here was
+  # a `find newlib/libm -name Makefile.am | sed -d ...` loop. It was DEAD CODE:
+  # this newlib uses non-recursive automake, so there are NO Makefile.am files
+  # under newlib/libm/ (a single top-level newlib/Makefile.am includes the
+  # per-dir Makefile.inc fragments) — the loop body never ran and changed nothing.
+  # The real 64-bit-long-double handling for aarch64 is already upstream:
+  #   * newlib/libm/Makefile.inc only `include`s libm/ld80 or libm/ld128 for the
+  #     i386 / x86_64 / riscv machine dirs, NOT aarch64 — so the extended-precision
+  #     *l sources are never compiled for aarch64-pc-msys, and
+  #   * the *l entry points come from newlib/libm/common/*l.c, which alias to the
+  #     double routines under _LDBL_EQ_DBL (aarch64-pc-msys has long double == double).
+  # autogen below regenerates newlib/Makefile.in from those .inc fragments, so the
+  # exclusion is driven by configure, not by a post-clone sed.
+
 
   # Run autogen specifically for winsup
   cd ${srcdir}/${_realname}/winsup
@@ -158,11 +200,22 @@ build() {
 
   mkdir -p ${srcdir}/runtime-build
   cd ${srcdir}/runtime-build
+  # Derive the gcc private dir from the compiler -- never hardcode the version.
+  # A wrong version dir (e.g. "15" vs the installed "15.0.1") makes the -nostdinc
+  # -isystem path dead, so gcc finds no <stddef.h> and newlib/winsup headers fall
+  # through to the mingw sysroot copies -> "#error Only Win32 target is supported!".
+  GCC_BASE="$(dirname "$(aarch64-pc-msys-gcc -print-libgcc-file-name)")"
+  [ -f "${GCC_BASE}/include/stddef.h" ] || {
+    echo "FATAL: gcc include dir not found under ${GCC_BASE}/include (no stddef.h)"
+    echo "       -print-libgcc-file-name = $(aarch64-pc-msys-gcc -print-libgcc-file-name)"
+    exit 1
+  }
+  echo "GCC_BASE resolved to ${GCC_BASE} (stddef.h present)"
   export CFLAGS="\
   -nostdinc \
   -D_MB_CAPABLE=1 \
-  -isystem /usr/lib/gcc/aarch64-pc-msys/15/include \
-  -isystem /usr/lib/gcc/aarch64-pc-msys/15/include-fixed \
+  -isystem ${GCC_BASE}/include \
+  -isystem ${GCC_BASE}/include-fixed \
   -isystem ${HOME}/headers/aarch64-pc-msys/include \
   -isystem /usr/aarch64-pc-msys/include \
   -O1 -pipe"
@@ -171,10 +224,10 @@ build() {
   -nostdinc \
   -nostdinc++ \
   -D_MB_CAPABLE=1 \
-  -isystem /usr/lib/gcc/aarch64-pc-msys/15/include \
-  -isystem /usr/lib/gcc/aarch64-pc-msys/15/include-fixed \
-  -isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++ \
-  -isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++/backward \
+  -isystem ${GCC_BASE}/include \
+  -isystem ${GCC_BASE}/include-fixed \
+  -isystem ${GCC_BASE}/include/c++ \
+  -isystem ${GCC_BASE}/include/c++/backward \
   -isystem ${HOME}/headers/aarch64-pc-msys/include \
   -isystem /usr/aarch64-pc-msys/include \
   -O1 -pipe"
@@ -219,12 +272,14 @@ sed -i 's/^am--refresh:.*/am--refresh:/' cygserver/Makefile
 sed -i '/-mno-use-libstdc-wrappers/d' cygwin/Makefile
 cat >> cygwin/Makefile << 'EOF'
 
-# netdrive.cc ICE workaround: strip problematic flags, compile at -O0
-fhandler/netdrive.o: CXXFLAGS := $(filter-out -O% -ftracer -fmerge-constants -Werror -Wall -Wstrict-aliasing,$(CXXFLAGS)) \
-  -O0 -fno-merge-constants \
-  -fno-exceptions -fno-rtti -fno-use-cxa-atexit -fno-threadsafe-statics
-
-fhandler/netdrive.o: AM_CXXFLAGS :=
+# GCC-15 AArch64 per-file workarounds — keep the build's -O1; NO -O0 drops.
+# Root causes:
+#  devices.o           : SIGSEGV in RTL pass ldp_fusion at -O2 (harmless no-op at -O1)
+#                        -> -mno-early-ldp-fusion
+#  fhandler/netdrive.o : GCC-15 -Wmisleading-indentation whole-file scan hangs forever
+#                        (optimizer is fine) -> -Wno-misleading-indentation (keeps -O1 -Wall -Werror)
+devices.o: CXXFLAGS += -mno-early-ldp-fusion
+fhandler/netdrive.o: CXXFLAGS += -Wno-misleading-indentation
 EOF
 cd cygwin
 make child_info_magic.h shared_info_magic.h globals.h localtime.patched.c stamp-h1 config.h
@@ -233,7 +288,7 @@ cd cygserver
 make -j$(nproc) OBJEXT=o
 cd ../
 sed -i '/^\$(LIBSERVER):/,/libcygserver\.a/c\
-LIBSERVER = ${HOME}/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/runtime-build/cygserver/libcygserver.a
+LIBSERVER = '"${srcdir}"'/runtime-build/cygserver/libcygserver.a
 ' cygwin/Makefile
 sed -i '/-mno-use-libstdc-wrappers/d' cygwin/Makefile
 cd cygwin 
@@ -271,22 +326,22 @@ aarch64-pc-msys-g++ -DHAVE_CONFIG_H \
 -I${srcdir}/${_realname}/winsup/cygwin \
 -U_FORTIFY_SOURCE \
 -I${srcdir}/${_realname}/winsup/cygwin/local_includes \
--I${HOME}/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/winsup/cygwin \
+-I${srcdir}/winsup/cygwin \
 -isystem ${srcdir}/${_realname}/winsup/cygwin/include \
--isystem ${HOME}/MSYS2-packages/msys2-runtime-aarch64-stage-2/src/newlib/targ-include \
+-isystem ${srcdir}/newlib/targ-include \
 -isystem ${srcdir}/${_realname}/newlib/libc/include \
 -fno-rtti -fno-exceptions -fno-use-cxa-atexit \
 -fno-threadsafe-statics \
 -nostdinc -nostdinc++ \
 -D_MB_CAPABLE=1 \
--isystem /usr/lib/gcc/aarch64-pc-msys/15/include \
--isystem /usr/lib/gcc/aarch64-pc-msys/15/include-fixed \
--isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++ \
--isystem /usr/lib/gcc/aarch64-pc-msys/15/include/c++/backward \
+-isystem ${GCC_BASE}/include \
+-isystem ${GCC_BASE}/include-fixed \
+-isystem ${GCC_BASE}/include/c++ \
+-isystem ${GCC_BASE}/include/c++/backward \
 -isystem ${HOME}/headers/aarch64-pc-msys/include \
 -isystem /usr/aarch64-pc-msys/include \
 -fno-merge-constants \
--O0 \
+-O1 -Wno-misleading-indentation \
 -MT msys2_path_conv.o -MD -MP -MF /tmp/msys2_path_conv.Tpo \
 -c -o msys2_path_conv.o \
 ${srcdir}/${_realname}/winsup/cygwin/msys2_path_conv.cc
@@ -317,32 +372,109 @@ EOF
   make -j$(nproc) OBJEXT=o
 }
 
-# package_msys2-runtime() {
-#   pkgdesc="Cygwin POSIX emulation engine (aarch64-pc-msys)"
-#   conflicts=('catgets' 'libcatgets')
-#   replaces=('catgets' 'libcatgets')
+package() {
+  # Cross runtime package for the aarch64-pc-msys toolchain. Ships the real
+  # crt0.o (`bl msys_crt0` — the bootstrap stub `nop;ret` causes the startup
+  # hang), the runtime import lib, the native ARM64 msys-2.0.dll, and the newlib
+  # libs INTO THE SYSROOT (/usr/aarch64-pc-msys/...). Explicit copies, not `make
+  # DESTDIR install`, which targets /usr and would clobber the host x86_64 runtime.
+  #
+  # STRICT GUARANTEE: every artifact below is mandatory. A missing
+  # file — or a crt0.o that is still the bootstrap STUB — is a HARD `exit 1`,
+  # never a warning. This is what lets us retire apply-crt0-fix.sh: the package
+  # cannot silently ship the stub that makes every exe hang at startup.
+  pkgdesc="aarch64-pc-msys runtime: crt0 + libmsys-2.0 import lib + msys-2.0.dll + newlib libs (sysroot)"
+  # NB: no depends=() on cross-msysarm64-newlib — build-msys.sh runs `makepkg -e`
+  # without --nodeps, and the newlib pkg isn't pacman-installed during the build;
+  # the two are independent file sets and the consumer pacman -U's both.
+  local _rb="${srcdir}/runtime-build"
 
-#   cd ${srcdir}/runtime-build
-#   make DESTDIR=${pkgdir} install
+  install -d "${pkgdir}/usr/aarch64-pc-msys/lib"
+  local _o _s
 
-#   # Runtime package: DLL only, no headers or import libs
-#   rm -rf ${pkgdir}/usr/include
-#   rm -rf ${pkgdir}/usr/lib
-# }
+  # --- crt0.o / gcrt0.o: real ones only, stub rejected ---------------------
+  # The whole startup-hang bug class lives here. Each startup object is verified
+  # against the symbol it MUST define/reference, so a bootstrap stub (whose
+  # mainCRTStartup is `nop; ret` and references nothing) is rejected:
+  #   crt0.o   — the plain startup: mainCRTStartup calls msys_crt0, so the object
+  #              carries an UNDEFINED `msys_crt0` reference (nm 'U msys_crt0').
+  #   gcrt0.o  — the -pg profiling startup (gcrt0.c): it does NOT call msys_crt0;
+  #              it DEFINES `_monstartup` (nm 'T _monstartup'). Gating it on
+  #              msys_crt0 would be wrong — check its own symbol instead.
+  local _sym _grep
+  for _o in crt0.o gcrt0.o; do
+    if [ "${_o}" = "crt0.o" ]; then
+      _sym="msys_crt0";   _grep="U msys_crt0"      # undefined ref into the runtime
+    else
+      _sym="_monstartup"; _grep=" T _monstartup"   # defined profiling ctor
+    fi
+    _s="$(find "${_rb}" -name "${_o}" 2>/dev/null | head -1)"
+    if [ -z "${_s}" ]; then
+      echo "FATAL: ${_o} not found in ${_rb} — the runtime build did not produce it."
+      echo "       Refusing to package: a missing crt0 would leave the sysroot STUB in place."
+      exit 1
+    fi
+    if ! aarch64-pc-msys-nm "${_s}" | grep -q "${_grep}"; then
+      echo "FATAL: ${_s} does NOT have expected symbol '${_sym}' — it looks like the bootstrap STUB."
+      echo "       Shipping it would make every aarch64-pc-msys exe hang at startup. Aborting."
+      exit 1
+    fi
+    install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-msys/lib/${_o}"
+    echo "packaged REAL ${_o} (has ${_sym})"
+  done
 
-# package_msys2-runtime-devel() {
-#   pkgdesc="Headers and import lib for msys2-runtime (aarch64-pc-msys)"
-#   depends=("msys2-runtime=${pkgver}")
-#   conflicts=('catgets-devel' 'libcatgets-devel')
-#   replaces=('catgets-devel' 'libcatgets-devel')
+  # --- runtime import lib + the libcygwin alias the build system links against
+  _s="$(find "${_rb}" -name libmsys-2.0.a 2>/dev/null | head -1)"
+  if [ -z "${_s}" ]; then
+    echo "FATAL: libmsys-2.0.a not found in ${_rb} — runtime import lib missing. Aborting."
+    exit 1
+  fi
+  install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-msys/lib/libmsys-2.0.a"
+  ln -sf libmsys-2.0.a "${pkgdir}/usr/aarch64-pc-msys/lib/libcygwin.a"
+  echo "packaged libmsys-2.0.a (+ libcygwin.a alias)"
 
-#   cd ${srcdir}/runtime-build
-#   make DESTDIR=${pkgdir} install
+  # --- newlib libs (Phase 2): fold libc/libm/libg into this package so the
+  # sysroot's newlib libs come from a package, not a hand-copy out of src/.
+  # libc.a/libm.a are mandatory. libg.a is a LEGACY "debug libc" that modern
+  # newlib frequently does not emit — package it if present, else skip (not fatal).
+  for _o in libc.a libm.a; do
+    _s="$(find "${_rb}" -name "${_o}" 2>/dev/null | head -1)"
+    if [ -z "${_s}" ]; then
+      echo "FATAL: ${_o} not found in ${_rb} — newlib did not build. Aborting."
+      exit 1
+    fi
+    install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-msys/lib/${_o}"
+    echo "packaged ${_o}"
+  done
+  _s="$(find "${_rb}" -name libg.a 2>/dev/null | head -1)"
+  if [ -n "${_s}" ]; then
+    install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-msys/lib/libg.a"
+    echo "packaged libg.a"
+  else
+    echo "note: libg.a not built by newlib (legacy debug libc) — skipping (not fatal)"
+  fi
 
-#   # Devel package: headers + import libs only, no DLL or executables
-#   rm -rf ${pkgdir}/usr/bin
-#   rm -rf ${pkgdir}/usr/sbin
-#   rm -rf ${pkgdir}/usr/share
-# }
+  # --- native ARM64 msys-2.0.dll (shipped under the sysroot; not executed on the x64 host)
+  # The winsup Makefile's default target LINKS the DLL as `new-msys-2.0.dll` and only
+  # renames it to the final `msys-2.0.dll` on `make install` — which this package build
+  # (makepkg -e: build() runs `make`, then package(); no `make install`) does NOT run.
+  # So on a CLEAN tree only `new-msys-2.0.dll` exists; a plain `msys-2.0.dll` shows up
+  # only when a prior full/testinst build left one behind (works-on-dirty / fails-clean).
+  # `new-msys-2.0.dll` IS the real linked DLL (install just strips+renames it), so accept
+  # `msys-2.0.dll` if present, else fall back to `new-msys-2.0.dll`, and ship it as the
+  # final name.
+  install -d "${pkgdir}/usr/aarch64-pc-msys/bin"
+  _s="$(find "${_rb}" -name msys-2.0.dll 2>/dev/null | head -1)"
+  if [ -z "${_s}" ]; then
+    _s="$(find "${_rb}" -name new-msys-2.0.dll 2>/dev/null | head -1)"
+    [ -n "${_s}" ] && echo "note: using freshly-linked new-msys-2.0.dll (no installed msys-2.0.dll on a clean tree)"
+  fi
+  if [ -z "${_s}" ]; then
+    echo "FATAL: neither msys-2.0.dll nor new-msys-2.0.dll found in ${_rb} — the runtime DLL was not built. Aborting."
+    exit 1
+  fi
+  install -m755 "${_s}" "${pkgdir}/usr/aarch64-pc-msys/bin/msys-2.0.dll"
+  echo "packaged msys-2.0.dll (from $(basename "${_s}"))"
+}
 
 

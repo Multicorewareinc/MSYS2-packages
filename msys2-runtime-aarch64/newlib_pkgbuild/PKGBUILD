@@ -1,7 +1,11 @@
 # Maintainer: Windows on ARM Experiments
 _realname=msys2-runtime
 pkgbase=${_realname}
-pkgname=(${_realname} ${_realname}-devel)
+# Collision-free cross pkgname: NEVER the host names
+# msys2-runtime / msys2-runtime-devel, which would let `pacman -U` clobber the
+# host x86_64 MSYS2 runtime on the build box. This is the stage-1 bootstrap
+# newlib; distinct from stage-2's cross-msysarm64-newlib so both can coexist.
+pkgname=cross-msysarm64-newlib-stage1
 pkgver=3.6.7
 pkgrel=4
 pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-msys"
@@ -281,30 +285,25 @@ EOF
 
 
 
-package_msys2-runtime() {
-  pkgdesc="Cygwin POSIX emulation engine (aarch64-pc-msys)"
-  conflicts=('catgets' 'libcatgets')
-  replaces=('catgets' 'libcatgets')
-
-  cd ${srcdir}/runtime-build
-  make DESTDIR=${pkgdir} install
-
-  # Runtime package: DLL only, no headers or import libs
-  rm -rf ${pkgdir}/usr/include
-  rm -rf ${pkgdir}/usr/lib
-}
-
-package_msys2-runtime-devel() {
-  pkgdesc="Headers and import lib for msys2-runtime (aarch64-pc-msys)"
-  depends=("msys2-runtime=${pkgver}")
-  conflicts=('catgets-devel' 'libcatgets-devel')
-  replaces=('catgets-devel' 'libcatgets-devel')
-
-  cd ${srcdir}/runtime-build
-  make DESTDIR=${pkgdir} install
-
-  # Devel package: headers + import libs only, no DLL or executables
-  rm -rf ${pkgdir}/usr/bin
-  rm -rf ${pkgdir}/usr/sbin
-  rm -rf ${pkgdir}/usr/share
+package() {
+  # Cross package: ship the newlib C runtime libs into the SYSROOT
+  # (/usr/aarch64-pc-msys/lib) ONLY — these are aarch64 objects consumed by the
+  # aarch64-pc-msys cross compiler. `make DESTDIR install` is deliberately NOT
+  # used: configure ran with --prefix=/usr, so a DESTDIR install would stage
+  # into host /usr/{bin,lib,include} and a `pacman -U` of a host-named package
+  # would overwrite the build box's own x86_64 MSYS2 runtime.
+  # Mirrors stage-2 cross-msysarm64-newlib's package().
+  pkgdesc="newlib C runtime libs for the aarch64-pc-msys cross toolchain (stage 1)"
+  install -d "${pkgdir}/usr/aarch64-pc-msys/lib"
+  local _l _s
+  for _l in libc.a libm.a libg.a; do
+    _s="$(find "${srcdir}/runtime-build" "${srcdir}" -name "${_l}" -path '*newlib*' 2>/dev/null | head -1)"
+    [ -z "${_s}" ] && _s="$(find "${srcdir}/runtime-build" "${srcdir}" -name "${_l}" 2>/dev/null | head -1)"
+    if [ -n "${_s}" ]; then
+      install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-msys/lib/${_l}"
+      echo "packaged ${_l} <- ${_s}"
+    else
+      echo "WARNING: newlib ${_l} not found in build tree"
+    fi
+  done
 }
