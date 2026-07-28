@@ -9,7 +9,7 @@ pkgbase=${_realname}
 # and prevents any accidental host-clobbering build.
 pkgname=cross-msysarm64-runtime-stage1
 pkgver=3.6.7
-pkgrel=5
+pkgrel=6
 pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-msys"
 arch=('x86_64')
 options=('!strip' '!buildflags')
@@ -272,8 +272,16 @@ cat >> cygwin/Makefile << 'EOF'
 #                        -> -mno-early-ldp-fusion
 #  fhandler/netdrive.o : GCC-15 -Wmisleading-indentation whole-file scan hangs forever
 #                        (optimizer is fine) -> -Wno-misleading-indentation (keeps -O1 -Wall -Werror)
+#  libc/minires-os-if.o: GCC-15 cc1 INTEGRATED-preprocessor segfault on the deep macro-dense
+#                        <iphlpapi.h> -> ole2.h -> rpcndr.h header chain. The same TU compiles
+#                        clean when preprocessed to a .i and fed with -fpreprocessed, and clean
+#                        with a SEPARATE cpp pass, so the bug is in cc1's lex-while-parse path,
+#                        NOT the optimizer (crashes at -O0 too), GC, --enable-checking, or stack
+#                        size. Fix = run a separate cpp pass for this one C TU. Restores the
+#                        Windows DNS resolver backend on AArch64.
 devices.o: CXXFLAGS += -mno-early-ldp-fusion
 fhandler/netdrive.o: CXXFLAGS += -Wno-misleading-indentation
+libc/minires-os-if.o: CFLAGS += -no-integrated-cpp
 EOF
 mkdir -p /usr/aarch64-pc-msys/include/w32api && cp /usr/aarch64-pc-msys/include/*.h /usr/aarch64-pc-msys/include/w32api/
 # crt mingw import libs: prefer the ones already in the INSTALLED cross sysroot
