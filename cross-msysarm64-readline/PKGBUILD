@@ -141,4 +141,9 @@ package() {
   done
 
   install -Dm644 "${srcdir}/inputrc" "${pkgdir}${_sysroot}/etc/inputrc"
+
+  # share/info/dir is the info index, rebuilt by install-info at install time
+  # and owned by no package.  Shipping it makes every package that installs
+  # info pages collide with every other one.
+  rm -f "${pkgdir}${_sysroot}/usr/share/info/dir"
 }

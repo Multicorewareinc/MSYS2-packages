@@ -90,7 +90,14 @@ build() {
   # by disabling relocation in gettext.
   local _triplet="${_target%-msys}-cygwin"
 
-  PATH="${_sysroot}/bin:${_sysroot}/usr/bin:${PATH}"
+  # The sysroot bin directories are APPENDED, never prepended: they are on PATH
+  # only so that binaries compiled during configure can load msys-2.0.dll, and
+  # PATH order does not affect that.  Prepending them shadows the host's tools
+  # with target ones - once cross-msysarm64-sed is installed, a prepended
+  # sysroot bin makes configure run the aarch64 sed instead of the host's, and
+  # config.status then fails with "Something went wrong bootstrapping makefile
+  # fragments for automatic dependency tracking".
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
   export PATH
 
   ./configure \

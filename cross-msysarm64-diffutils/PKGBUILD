@@ -1,0 +1,125 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of diffutils, staged into the cross sysroot.
+# Sources are taken unchanged from the native diffutils/ recipe; only the
+# configure triplets and the install prefix differ.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=diffutils
+pkgname=cross-msysarm64-diffutils
+pkgver=3.12
+pkgrel=1
+pkgdesc="Utility programs used for creating patch files (${_target})"
+arch=('x86_64')
+url="https://www.gnu.org/software/diffutils"
+msys2_repository_url='https://cgit.git.savannah.gnu.org/cgit/diffutils.git'
+msys2_references=(
+  "anitya: 436"
+  "cpe: cpe:2.3:a:gnu:diffutils"
+)
+license=('spdx:GPL-3.0-or-later')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-libiconv' 'cross-msysarm64-gettext'
+         'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip')
+source=(https://ftp.gnu.org/gnu/${pkgbase}/${pkgbase}-${pkgver}.tar.xz{,.sig})
+sha256sums=('7c8b7f9fc8609141fdea9cece85249d308624391ff61dedaf528fcb337727dfd'
+            'SKIP')
+validpgpkeys=('155D3FC500C834486D1EEA677FD9FCCB000BEEEE') # Jim Meyering <jim@meyering.net>
+
+build() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  # make sure tests are running OK
+  sed -i "s/mkdir -m 0700/mkdir /" tests/init.sh
+
+  # Native for the target rather than cross: autoconf skips every AC_RUN_IFELSE
+  # the moment --host differs from --build and answers them with guesses, and
+  # gnulib - which diffutils vendors heavily - leans on those probes.  This host
+  # is Windows-on-ARM and runs aarch64 binaries directly, so configure can
+  # answer them for real.  CC/AR/... come from the makepkg profile, so the
+  # triplet cannot redirect tool lookup to the host's x86_64 gcc.
+
+  # The sysroot bin directories are APPENDED, never prepended: they are on PATH
+  # only so that binaries compiled during configure can load msys-2.0.dll, and
+  # PATH order does not affect that.  Prepending them shadows the host's tools
+  # with target ones - once cross-msysarm64-sed is installed, a prepended
+  # sysroot bin makes configure run the aarch64 sed instead of the host's, and
+  # config.status then fails with "Something went wrong bootstrapping makefile
+  # fragments for automatic dependency tracking".
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # gl_cv_clean_version_stddef=yes overrides a probe whose "no" answer is
+  # correct but whose consequence is not usable here.
+  #
+  # The probe detects gcc PR114870 - <time.h> re-defining
+  # __STDC_VERSION_STDDEF_H__ after it has been #undef'd - and this compiler
+  # genuinely has it, so configure answers "no" and gnulib substitutes its own
+  # stddef.h.  gnulib's workaround for that bug is to disable the __need_*
+  # special-invocation protocol outright: in the generated lib/stddef.h the
+  # guard reads
+  #     #if (... || defined __need_wint_t) && !1
+  # with the trailing !1 coming from this very probe.
+  #
+  # newlib's sys/_types.h relies on precisely that protocol - it does
+  #     #define __need_wint_t
+  #     #include <stddef.h>
+  # to obtain wint_t, and with the path disabled the build dies on
+  #     sys/_types.h:167:5: error: unknown type name 'wint_t'
+  #
+  # Forcing "yes" stops gnulib replacing stddef.h at all, so the system header
+  # and its __need_* handling are used.  What is given up is gnulib's
+  # workaround for PR114870, which only affects visibility of the C23
+  # __STDC_VERSION_STDDEF_H__ macro - nothing here depends on it.  The real fix
+  # is in the compiler; this can be dropped once the toolchain is rebuilt from
+  # a gcc that does not carry PR114870.
+  #
+  # ac_cv_header_stdbit_h=no works around a sysroot that ships a C23 <stdbit.h>
+  # nothing implements.  The header declares the whole family as plain extern
+  # functions with no inline definitions,
+  #     unsigned int stdc_bit_width_ul (unsigned long) __pure2;
+  # but neither libc.a nor libmsys-2.0.a defines any of them - checked with nm,
+  # zero matches in both.  gnulib's only probe here is AC_CHECK_HEADERS, which
+  # is compile-only: the header exists, so it concludes stdbit is usable and
+  # does not build its replacement.  diffutils' floor_log2() then calls
+  # stdc_bit_width() and the link fails with
+  #     src/system.h:140: undefined reference to `stdc_bit_width_ul'
+  # Declaring the header absent makes gnulib supply working implementations.
+  # The real fix belongs in the runtime headers, which should not declare an
+  # ABI the library does not provide.
+  ./configure \
+    --build=${_target} \
+    --host=${_target} \
+    --prefix=${_sysroot}/usr \
+    --without-libiconv-prefix \
+    --without-libintl-prefix \
+    gl_cv_clean_version_stddef=yes \
+    ac_cv_header_stdbit_h=no
+
+  # SUBDIRS excludes gnulib-tests for the same reason as cross-msysarm64-sed:
+  # the cross gcc dies in its front end parsing winspool.h (via windows.h) when
+  # compiling gnulib-tests/vma-iter.c, and under other flag combinations spins
+  # instead of failing.  No flag combination avoids it - -O2, -g -O0 and
+  # -g -O2 -fno-var-tracking were all tried - and nothing shipped needs it: the
+  # file exists only under gnulib-tests, and the profile sets !check so the
+  # suite is built but never run.
+  make SUBDIRS='lib src doc po man'
+}
+
+package() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+  make DESTDIR="${pkgdir}" SUBDIRS='lib src doc po man' install
+
+  # share/info/dir is the info index, rebuilt by install-info at install time
+  # and owned by no package; shipping it collides with every other package
+  # that installs info pages.
+  rm -f ${pkgdir}${_sysroot}/usr/share/info/dir
+
+  [[ -f ${pkgdir}${_sysroot}/usr/bin/diff.exe ]] || {
+    error "diff.exe was not produced"; return 1
+  }
+}

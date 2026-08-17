@@ -1,0 +1,105 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of sed, staged into the cross sysroot.
+# Sources and patches are taken unchanged from the native sed/ recipe; only the
+# configure triplets and the install prefix differ.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=sed
+pkgname=cross-msysarm64-sed
+pkgver=4.9
+pkgrel=1
+pkgdesc="GNU stream editor (${_target})"
+arch=('x86_64')
+url="https://www.gnu.org/software/sed"
+msys2_repository_url='https://cgit.git.savannah.gnu.org/cgit/sed.git'
+msys2_references=(
+  "anitya: 4789"
+  "cpe: cpe:/a:gnu:sed"
+)
+license=('spdx:GPL-3.0-or-later')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-gettext' 'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip')
+source=(https://ftp.gnu.org/pub/gnu/sed/${pkgbase}-${pkgver}.tar.xz{,.sig}
+        sed-4.4-1.src.patch
+        sed-4.4-msys-use-text-mode.patch)
+sha256sums=('6e226b732e1cd739464ad6862bd1a1aba42d7982922da7a53519631d24975181'
+            'SKIP'
+            '12525e7bf4a1b57913d4047a2313f9127f29468193c2b583cfdfa128b4141032'
+            'a6cf37f31c11f5fbc6d11fb379a3feabdcbe0606b69941d82449d106299ffbf6')
+validpgpkeys=('155D3FC500C834486D1EEA677FD9FCCB000BEEEE')
+
+prepare() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  patch -p1 -i ${srcdir}/sed-4.4-msys-use-text-mode.patch
+  autoreconf -fiv
+
+  patch -p2 -i ${srcdir}/sed-4.4-1.src.patch
+}
+
+build() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  export gl_cv_have_weak=no
+
+  # Configured as a native build for the target rather than a cross build.
+  # autoconf disables every AC_RUN_IFELSE the moment --host differs from
+  # --build - it never tries to run anything - and answers them all with
+  # guesses.  gnulib, which sed vendors heavily, leans on those probes far more
+  # than most packages.  This host is Windows-on-ARM and executes aarch64
+  # binaries directly, so saying so lets configure answer them for real, and it
+  # is fail-fast: if the binaries could not run, autoconf stops rather than
+  # guessing.  CC/AR/... come from the makepkg profile, so naming the target as
+  # the build system cannot redirect tool lookup to the host's x86_64 gcc.
+
+  # The sysroot bin directories are APPENDED, never prepended: they are on PATH
+  # only so that binaries compiled during configure can load msys-2.0.dll, and
+  # PATH order does not affect that.  Prepending them shadows the host's tools
+  # with target ones - once cross-msysarm64-sed is installed, a prepended
+  # sysroot bin makes configure run the aarch64 sed instead of the host's, and
+  # config.status then fails with "Something went wrong bootstrapping makefile
+  # fragments for automatic dependency tracking".
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  ./configure \
+    --prefix=${_sysroot}/usr \
+    --build=${_target} \
+    --host=${_target}
+
+  # SUBDIRS excludes gnulib-tests.  sed's default SUBDIRS is "po . gnulib-tests",
+  # so a plain "make all" compiles the gnulib test suite as well as sed itself,
+  # and gnulib-tests/vma-iter.c breaks the cross gcc: it segfaults in the front
+  # end while parsing winspool.h (reached via windows.h),
+  #     winspool.h:927:3: internal compiler error: Segmentation fault
+  # and under other flag combinations cc1 spins instead, burning CPU until it is
+  # killed.  A bare "#include <windows.h>" compiles cleanly at -O0, -O2 and
+  # -O2 -fno-tree-ccp, so this is context-dependent rather than a bad header.
+  #
+  # Nothing shipped needs it: vma-iter.c exists only under gnulib-tests, and the
+  # makepkg profile sets !check so the suite is never run - it was only ever
+  # being built. Dropping the subdir sidesteps the compiler bug entirely rather
+  # than papering over it with flags.
+  make SUBDIRS='po .'
+}
+
+package() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+  make DESTDIR=${pkgdir} SUBDIRS='po .' install
+  rm -f ${pkgdir}${_sysroot}/usr/lib/charset.alias
+
+  # share/info/dir is the info index, rebuilt by install-info when a package is
+  # installed; it is not owned by any package.  Shipping it makes every package
+  # that installs info pages collide with every other one - natively nothing
+  # owns /usr/share/info/dir, and pacman refuses the install otherwise.
+  rm -f ${pkgdir}${_sysroot}/usr/share/info/dir
+
+  [[ -f ${pkgdir}${_sysroot}/usr/bin/sed.exe ]] || {
+    error "sed.exe was not produced"; return 1
+  }
+}

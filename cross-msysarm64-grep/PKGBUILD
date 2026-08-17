@@ -1,0 +1,109 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of grep, staged into the cross sysroot.
+# Sources and patches are taken unchanged from the native grep/ recipe; only
+# the configure triplets and the install prefix differ.
+#
+# NOTE (from the native recipe): grep is deliberately held at 3.0 because 3.1
+# removed Windows line-ending handling, which broke configure tests for MINGW
+# packages using autotools.  See msys2/MSYS2-packages#1353, #2163 and
+# msys2/MINGW-packages#9771 before updating.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=grep
+pkgname=cross-msysarm64-grep
+pkgver=3.0
+pkgrel=7
+epoch=1
+pkgdesc="A string search utility (${_target})"
+arch=('x86_64')
+license=('spdx:GPL-3.0-or-later')
+url="https://www.gnu.org/software/grep/"
+msys2_repository_url='https://cgit.git.savannah.gnu.org/cgit/grep.git'
+msys2_references=(
+  "cpe: cpe:/a:gnu:grep"
+)
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-libiconv' 'cross-msysarm64-gettext'
+         'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip')
+source=(https://ftp.gnu.org/gnu/${pkgbase}/${pkgbase}-${pkgver}.tar.xz{,.sig}
+        grep-3.0-2.src.patch)
+sha256sums=('e2c81db5056e3e8c5995f0bb5d0d0e1cad1f6f45c3b2fc77b6e81435aed48ab5'
+            'SKIP'
+            '0b2e7e54eb4d5b13257c1b4b43bcb234be02ded8fd04dfbbb73a92346e8b2db2')
+validpgpkeys=('155D3FC500C834486D1EEA677FD9FCCB000BEEEE')  # Jim Meyering
+
+prepare() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  #make test cases work
+  sed -i "s|case \$perms in drwx--\[-S\]---\*|case \$perms in drwx\*|" tests/init.sh
+
+  autoreconf -fi
+}
+
+build() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  export gl_cv_have_weak=no
+  export MSYSTEM=CYGWIN
+
+  # Native for the target rather than cross, as elsewhere in this chain: with
+  # --host != --build autoconf skips every AC_RUN_IFELSE and guesses, and grep
+  # vendors gnulib heavily.  CC/AR/... come from the makepkg profile, so the
+  # triplet cannot redirect tool lookup.
+
+  # The sysroot bin directories are APPENDED, never prepended: they are on PATH
+  # only so that binaries compiled during configure can load msys-2.0.dll, and
+  # PATH order does not affect that.  Prepending them shadows the host's tools
+  # with target ones - once cross-msysarm64-sed is installed, a prepended
+  # sysroot bin makes configure run the aarch64 sed instead of the host's, and
+  # config.status then fails with "Something went wrong bootstrapping makefile
+  # fragments for automatic dependency tracking".
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # --disable-perl-regexp: grep -P needs libpcre, which is not built for
+  # aarch64 yet.  Stated explicitly rather than left to configure's probe, so
+  # the package's capabilities do not silently depend on what happens to be
+  # installed.  Drop this once cross-msysarm64-pcre exists.
+  #
+  # gl_cv_clean_version_stddef=yes: the probe correctly detects gcc PR114870 in
+  # this compiler, but gnulib's response - disabling the __need_* protocol in
+  # its replacement stddef.h - is incompatible with newlib's sys/_types.h,
+  # which uses "#define __need_wint_t; #include <stddef.h>" to obtain wint_t.
+  # See cross-msysarm64-diffutils for the full explanation.  Drop once the
+  # toolchain is rebuilt from a gcc without PR114870.
+  ./configure \
+    --build=${_target} \
+    --host=${_target} \
+    --prefix=${_sysroot}/usr \
+    --disable-perl-regexp \
+    --without-libiconv-prefix \
+    --without-libintl-prefix \
+    gl_cv_clean_version_stddef=yes
+
+  # gnulib-tests excluded: the cross gcc dies in its front end parsing
+  # winspool.h (via windows.h) when compiling gnulib-tests/vma-iter.c, and
+  # spins rather than failing under other flags.  See cross-msysarm64-sed for
+  # the bisection; nothing shipped needs that subdir.
+  make SUBDIRS='lib src doc po tests'
+}
+
+package() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+  make DESTDIR=${pkgdir} SUBDIRS='lib src doc po tests' install
+
+  # share/info/dir is the info index, rebuilt by install-info at install time
+  # and owned by no package; shipping it collides with every other package
+  # that installs info pages.
+  rm -f ${pkgdir}${_sysroot}/usr/share/info/dir
+
+  [[ -f ${pkgdir}${_sysroot}/usr/bin/grep.exe ]] || {
+    error "grep.exe was not produced"; return 1
+  }
+}

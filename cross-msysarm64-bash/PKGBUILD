@@ -93,7 +93,15 @@ build() {
   #
   # This is fail-fast rather than silent: if the target binaries could not run,
   # autoconf would stop at "cannot run C compiled programs".
-  PATH="${_sysroot}/bin:${_sysroot}/usr/bin:${PATH}"
+
+  # The sysroot bin directories are APPENDED, never prepended: they are on PATH
+  # only so that binaries compiled during configure can load msys-2.0.dll, and
+  # PATH order does not affect that.  Prepending them shadows the host's tools
+  # with target ones - once cross-msysarm64-sed is installed, a prepended
+  # sysroot bin makes configure run the aarch64 sed instead of the host's, and
+  # config.status then fails with "Something went wrong bootstrapping makefile
+  # fragments for automatic dependency tracking".
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
   export PATH
 
   # Linked against the real libintl and libiconv from the sysroot, rather than

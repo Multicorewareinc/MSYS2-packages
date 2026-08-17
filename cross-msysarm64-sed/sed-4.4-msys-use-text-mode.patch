@@ -1,0 +1,14 @@
+--- a/sed/sed.c
++++ b/sed/sed.c
+@@ -68,7 +68,11 @@
+ char *in_place_extension = NULL;
+ 
+ /* The mode to use to read/write files, either "r"/"w" or "rb"/"wb".  */
++#ifdef __MSYS__
++char const *read_mode = "rt";
++#else
+ char const *read_mode = "r";
++#endif
+ char const *write_mode = "w";
+ 
+ #if O_BINARY
