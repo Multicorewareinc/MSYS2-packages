@@ -157,11 +157,28 @@ install_group() {
       continue
     fi
     printf '  %-52s %-14s installing\n' "$pkg" "$file_ver"
-    pacman -U --noconfirm "$file" >/dev/null 2>&1 || {
-      # Re-run showing the error, so the reason is visible rather than swallowed.
-      pacman -U --noconfirm "$file" 2>&1 | tail -8 >&2
+    local out rc
+    out=$(pacman -U --noconfirm "$file" 2>&1); rc=$?
+
+    # Some of these packages legitimately ship the same file.  runtime and
+    # newlib both provide ${SYSROOT}/lib/libc.a and libm.a - they are two halves
+    # of one bootstrap, built together, and whichever is installed second
+    # collides with the first.
+    #
+    # The overwrite is scoped to the sysroot rather than the '*' that would also
+    # work, so a mistake here cannot touch anything outside
+    # /usr/aarch64-pc-msys.  Note the quotes: unquoted, the shell expands the
+    # glob before pacman ever sees it.
+    if [[ $rc -ne 0 ]] && printf '%s' "$out" | grep -q 'exists in filesystem'; then
+      printf '  %-52s %-14s retrying with --overwrite "%s"\n' "" "" "${SYSROOT}/*"
+      printf '%s' "$out" | grep 'exists in filesystem' | sed 's/^/      conflict: /' | head -6
+      out=$(pacman -U --noconfirm --overwrite "${SYSROOT}/*" "$file" 2>&1); rc=$?
+    fi
+
+    if [[ $rc -ne 0 ]]; then
+      printf '%s' "$out" | tail -8 >&2
       die "failed to install ${pkg}"
-    }
+    fi
   done
 
   [[ ${#missing[@]} -gt 0 ]] &&

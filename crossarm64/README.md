@@ -49,6 +49,17 @@ Dependencies that live in the msys repos (zlib, mpc, isl, libzstd, libiconv,
 libintl, mingw-w64-cross-common-binutils) are pulled in automatically, so the
 machine needs working repos.
 
+`cross-msysarm64-runtime` and `cross-msysarm64-newlib` both ship
+`${sysroot}/lib/libc.a` and `libm.a` - they are two halves of one bootstrap,
+built together - so whichever is installed second collides with the first:
+
+    error: failed to commit transaction (conflicting files)
+    cross-msysarm64-runtime: /usr/aarch64-pc-msys/lib/libc.a exists in filesystem
+
+The script retries those with `--overwrite "/usr/aarch64-pc-msys/*"`, scoped to
+the sysroot rather than the `*` that would also work, so it cannot touch
+anything outside it. The conflicting paths are printed when this happens.
+
 Stage 0 checks for all seven and stops with a list if any are missing.
 
 ## Running it
