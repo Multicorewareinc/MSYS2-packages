@@ -50,17 +50,25 @@ require_toolchain() {
 # no-op, which is why it only reports what it actually removed.
 fix_shadowing_headers() {
   local removed=0 f
-  for f in "${SYSROOT}"/include/iconv.h \
-           "${SYSROOT}"/sys-include/iconv.h \
-           "${SYSROOT}"/usr/sys-include/iconv.h \
-           "${SYSROOT}"/include/unctrl.h \
-           "${SYSROOT}"/sys-include/unctrl.h \
-           "${SYSROOT}"/include/stdatomic.h \
-           "${SYSROOT}"/sys-include/stdatomic.h \
-           "${SYSROOT}"/usr/sys-include/stdatomic.h; do
+  # Ask the package what it ships rather than hardcoding the paths.  It installs
+  # each of these three headers at FOUR prefixes - include, sys-include,
+  # usr/include and usr/sys-include - and the hardcoded list this replaces
+  # covered only some of them.  usr/include was missed entirely, which is the
+  # primary include directory, so:
+  #
+  #   * libiconv would not install at all -
+  #     "/usr/aarch64-pc-msys/usr/include/iconv.h exists in filesystem
+  #      (owned by cross-msysarm64-runtime-devel)"
+  #   * usr/include/stdatomic.h, the copy curl chokes on, was left in place.
+  #
+  # Deriving the list means a change in what runtime-devel ships cannot silently
+  # reintroduce the problem.
+  while IFS= read -r f; do
     [[ -e $f ]] || continue
     rm -f "$f" && removed=$((removed + 1))
-  done
+  done < <(pacman -Ql cross-msysarm64-runtime-devel 2>/dev/null |
+             awk '{print $2}' |
+             grep -E '/(iconv|unctrl|stdatomic)\.h$' || true)
   if [[ $removed -gt 0 ]]; then
     msg "removed ${removed} shadowing newlib header(s) - see MSYS2-packages#26"
   fi
