@@ -27,10 +27,27 @@ a MinGW ARM64 cross compiler, needed only to *rebuild*
 `cross-msysarm64-w32api-runtime`, not to use the msys toolchain - skip them with
 `MINGW=0`.
 
-Order is derived from the packages' own `.PKGINFO`, not guessed. Dependencies
-that live in the msys repos (zlib, mpc, isl, libzstd, libiconv, libintl,
-mingw-w64-cross-common-binutils) are pulled in automatically, so the machine
-needs working repos.
+Packages are installed in the order the toolchain is bootstrapped in, so a
+fresh machine ends up consistent with how it was produced:
+
+| # | package | |
+|---|---|---|
+| 1 | `w32api-headers` | Win32 API headers for the sysroot |
+| 2 | `runtime-devel` | Cygwin/newlib headers for the sysroot |
+| 3 | `binutils` | ld, ar, as, nm |
+| 4 | `gcc-stage1` | minimal cross GCC (C, C++, libgcc) |
+| 5 | runtime stage 1 | msys2-runtime DLL, bootstrap build |
+| 6 | `gcc` stage 2 | full cross GCC (C, C++, libstdc++, libgomp, libatomic) |
+| 7 | runtime stage 2 | msys2-runtime DLL, built with the stage 2 GCC |
+
+Both compilers need headers in the sysroot before they are useful, which is why
+`runtime-devel` comes second rather than beside the runtime. The stage-1
+packages are intermediates, replaced by their stage-2 equivalents and usually
+not shipped; they are optional and reported as absent rather than as an error.
+
+Dependencies that live in the msys repos (zlib, mpc, isl, libzstd, libiconv,
+libintl, mingw-w64-cross-common-binutils) are pulled in automatically, so the
+machine needs working repos.
 
 Stage 0 checks for all seven and stops with a list if any are missing.
 

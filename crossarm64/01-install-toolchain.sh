@@ -61,14 +61,43 @@ MINGW_ORDER=(
   mingw-w64-cross-mingwarm64-gcc
 )
 
+# This is the bootstrap sequence the toolchain is built in, and installing in
+# the same order keeps a fresh machine consistent with how it was produced:
+#
+#   1  w32api-headers    Win32 API headers for the sysroot
+#   2  runtime-devel     Cygwin/newlib headers for the sysroot
+#   3  binutils          ld, ar, as, nm
+#   4  gcc-stage1        minimal cross GCC (C, C++, libgcc)
+#   5  runtime stage 1   msys2-runtime DLL, bootstrap build
+#   6  gcc stage 2       full cross GCC (C, C++, libstdc++, libgomp, libatomic)
+#   7  runtime stage 2   msys2-runtime DLL, built with the stage 2 GCC
+#
+# Both compilers need headers in the sysroot before they are useful, which is
+# why runtime-devel comes second rather than beside the runtime.
+#
+# The stage-1 packages are intermediates: they are replaced by their stage-2
+# equivalents and are often not shipped at all, so they are optional here and
+# simply reported as absent.  w32api-runtime is not part of that sequence - its
+# only dependency is w32api-headers - so it goes directly after them.
 MSYS_ORDER=(
-  cross-msysarm64-w32api-headers
-  cross-msysarm64-w32api-runtime
-  cross-msysarm64-binutils
-  cross-msysarm64-runtime
-  cross-msysarm64-newlib
-  cross-msysarm64-runtime-devel
-  cross-msysarm64-gcc
+  cross-msysarm64-w32api-headers      # 1
+  cross-msysarm64-w32api-runtime      #    (depends on w32api-headers)
+  cross-msysarm64-runtime-devel       # 2
+  cross-msysarm64-binutils            # 3
+  cross-msysarm64-gcc-stage1          # 4  optional intermediate
+  cross-msysarm64-newlib-stage1       # 5  optional intermediate
+  cross-msysarm64-runtime-stage1      # 5  optional intermediate
+  cross-msysarm64-gcc                 # 6
+  cross-msysarm64-newlib              # 7
+  cross-msysarm64-runtime             # 7
+)
+
+# Intermediates that are expected to be missing once a stage-2 build exists;
+# their absence is normal and is not worth a warning.
+OPTIONAL_PKGS=(
+  cross-msysarm64-gcc-stage1
+  cross-msysarm64-newlib-stage1
+  cross-msysarm64-runtime-stage1
 )
 
 # Newest file for an exact package name.  The glob <name>-*.pkg.tar.zst also
@@ -105,8 +134,14 @@ install_group() {
   for pkg in "${order[@]}"; do
     file=$(find_pkg "$pkg")
     if [[ -z $file ]]; then
-      missing+=("$pkg")
-      printf '  %-52s not found in %s\n' "$pkg" "$PKGDIR"
+      local optional=0 o
+      for o in "${OPTIONAL_PKGS[@]:-}"; do [[ $pkg == "$o" ]] && optional=1; done
+      if [[ $optional -eq 1 ]]; then
+        printf '  %-52s %-14s not present (bootstrap intermediate, expected)\n' "$pkg" "-"
+      else
+        missing+=("$pkg")
+        printf '  %-52s not found in %s\n' "$pkg" "$PKGDIR"
+      fi
       continue
     fi
     file_ver=$(pkg_field "$file" Version)
