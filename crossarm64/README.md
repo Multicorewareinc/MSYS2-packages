@@ -9,19 +9,36 @@ Bash has its own root and cannot see `/usr/aarch64-pc-msys`.
 
 ## Prerequisite: the cross toolchain
 
-These scripts do **not** build the toolchain. Install it first:
+These scripts do **not** build the toolchain, but they can install it from
+prebuilt packages. Seven are required:
 
     cross-msysarm64-binutils   cross-msysarm64-gcc
     cross-msysarm64-runtime    cross-msysarm64-runtime-devel
     cross-msysarm64-newlib     cross-msysarm64-w32api-headers
     cross-msysarm64-w32api-runtime
 
+If you have them as `.pkg.tar.zst` files:
+
+    ./01-install-toolchain.sh --list ~/toolchain   # check what it found
+    ./01-install-toolchain.sh ~/toolchain          # install in dependency order
+
+It also installs the `mingw-w64-cross-mingwarm64-*` family if present. Those are
+a MinGW ARM64 cross compiler, needed only to *rebuild*
+`cross-msysarm64-w32api-runtime`, not to use the msys toolchain - skip them with
+`MINGW=0`.
+
+Order is derived from the packages' own `.PKGINFO`, not guessed. Dependencies
+that live in the msys repos (zlib, mpc, isl, libzstd, libiconv, libintl,
+mingw-w64-cross-common-binutils) are pulled in automatically, so the machine
+needs working repos.
+
 Stage 0 checks for all seven and stops with a list if any are missing.
 
 ## Running it
 
     cd crossarm64
-    ./build-all.sh                 # or ./build-all.sh /c/my-root
+    ./build-all.sh                              # toolchain already installed
+    TOOLCHAIN_DIR=~/toolchain ./build-all.sh    # install it first, then build
 
 Roughly two hours on a warm machine, most of it in openssl, pacman and git.
 Each package logs to `${PKGDEST}/logs/<name>.log`; on failure the last 25 lines
@@ -31,6 +48,7 @@ Stages can also be run individually:
 
 | stage | script | what it does |
 |---|---|---|
+| - | `01-install-toolchain.sh` | installs a prebuilt cross toolchain in dependency order (optional) |
 | 0 | `00-prereqs.sh` | installs host build tools, verifies the toolchain, clears known sysroot problems |
 | 1 | `10-packages.sh` | builds and installs the 23 packages in dependency order |
 | 2 | `20-testroot.sh` | assembles a runnable Windows-ARM64 root |
