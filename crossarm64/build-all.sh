@@ -22,6 +22,9 @@ fi
 msg "stage 0/3 - host prerequisites and toolchain check"
 bash "${here}/00-prereqs.sh"
 
+msg "checking the toolchain works before committing two hours to it"
+bash "${here}/02-check-toolchain.sh" || die "toolchain check failed - see above"
+
 msg "stage 1/3 - building the package chain (this is the long one)"
 bash "${here}/10-packages.sh"
 

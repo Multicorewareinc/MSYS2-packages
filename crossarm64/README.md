@@ -62,6 +62,17 @@ anything outside it. The conflicting paths are printed when this happens.
 
 Stage 0 checks for all seven and stops with a list if any are missing.
 
+Then prove the toolchain actually works:
+
+    ./02-check-toolchain.sh
+
+It builds a DLL and checks its entry point is non-zero, checks `__thread`,
+`-lgdi32` and `windows.h`, then compiles `toolchain-check.c` and runs it on the
+target - LP64, endianness, libc, libm, pthreads, and 40 rounds of fork/waitpid.
+Known defects are reported as `KNOWN` rather than failing, since the recipes
+work around them; only something that would stop the build is a `FAIL`.
+`build-all.sh` runs this automatically before stage 1.
+
 ## Running it
 
     cd crossarm64
@@ -78,6 +89,7 @@ Stages can also be run individually:
 |---|---|---|
 | - | `01-install-toolchain.sh` | installs a prebuilt cross toolchain in dependency order (optional) |
 | 0 | `00-prereqs.sh` | installs host build tools, verifies the toolchain, clears known sysroot problems |
+| - | `02-check-toolchain.sh` | compiles and runs `toolchain-check.c`; proves the toolchain works before the long build |
 | 1 | `10-packages.sh` | builds and installs the 23 packages in dependency order |
 | 2 | `20-testroot.sh` | assembles a runnable Windows-ARM64 root |
 | 3 | `30-test.sh` | runs every executable, then 30-odd functional checks |
