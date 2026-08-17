@@ -20,7 +20,14 @@ cd "$REPO_ROOT" || { echo "lint: cannot cd to $REPO_ROOT"; exit 2; }
 
 # Recipe dirs that build ARM64 cross artifacts. Globs; missing dirs are skipped.
 mapfile -t PKGBUILDS < <(
-  find cross-msysarm64-* msys2-runtime-aarch64* -name PKGBUILD 2>/dev/null | sort
+  # src/ and pkg/ are makepkg's build directories, holding extracted upstream
+  # sources.  They are gitignored, so CI never sees them, but a developer with a
+  # built tree does - and some upstreams ship PKGBUILDs of their own.  pacman's
+  # makepkg test suite has eleven, all named 'foo', which this would otherwise
+  # report as naming violations.
+  find cross-msysarm64-* msys2-runtime-aarch64* \
+    \( -name src -o -name pkg \) -prune -o \
+    -name PKGBUILD -print 2>/dev/null | sort
 )
 
 if [ "${#PKGBUILDS[@]}" -eq 0 ]; then
