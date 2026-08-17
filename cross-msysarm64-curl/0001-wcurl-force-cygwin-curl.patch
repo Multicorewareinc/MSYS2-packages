@@ -1,0 +1,11 @@
+--- curl-8.14.0/scripts/wcurl.orig	2025-05-28 07:41:50.000000000 +0200
++++ curl-8.14.0/scripts/wcurl	2025-05-28 09:19:04.876930400 +0200
+@@ -179,7 +179,7 @@
+ # Execute curl with the list of URLs provided by the user.
+ exec_curl()
+ {
+-    CMD="curl "
++    CMD="/usr/bin/curl "
+ 
+     # Store version to check if it supports --no-clobber and --parallel.
+     curl_version=$($CMD --version | cut -f2 -d' ' | head -n1)

@@ -1,0 +1,211 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of curl, staged into the cross sysroot.
+# Sources and the wcurl patch are taken unchanged from the native curl/ recipe.
+# The configure options are the tested standalone build script's; see build()
+# for the differences from the native recipe and why they are there.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=curl
+pkgname=cross-msysarm64-curl
+pkgver=8.21.0
+pkgrel=1
+pkgdesc="Multi-protocol file transfer utility and library (${_target})"
+arch=('x86_64')
+url="https://curl.se/"
+msys2_repository_url="https://github.com/curl/curl"
+msys2_references=(
+  "cpe: cpe:/a:curl:curl"
+  "cpe: cpe:/a:curl:libcurl"
+  "cpe: cpe:/a:haxx:curl"
+  "cpe: cpe:/a:haxx:libcurl"
+  "cpe: cpe:/a:libcurl:libcurl"
+)
+license=('spdx:MIT')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-openssl' 'cross-msysarm64-zlib' 'cross-msysarm64-zstd'
+         'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip' 'staticlibs')
+source=("https://github.com/curl/curl/releases/download/${pkgbase}-${pkgver//./_}/${pkgbase}-${pkgver}.tar.xz"{,.asc}
+        0001-wcurl-force-cygwin-curl.patch)
+sha256sums=('aa1b66a70eace83dc624508745646c08ae561de512ab403adffb93ac87fc72e6'
+            'SKIP'
+            '2dc51428fac6c2332682e61f5c6b30be0f22217f66ea6e272842abe0559278a9')
+validpgpkeys=('27EDEAF22F3ABCEB50DB9A125CC908FDB71E12C2')   # Daniel Stenberg
+
+prepare() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  patch -p1 -i ${srcdir}/0001-wcurl-force-cygwin-curl.patch
+
+  autoreconf -fiv
+}
+
+build() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  export lt_cv_deplibs_check_method='pass_all'
+  export MSYSTEM=CYGWIN
+
+  # Tell configure there is no <stdatomic.h>, so easy_lock.h takes its
+  # pthread_mutex path instead of the C11 atomic one.
+  #
+  # There are two stdatomic.h in play.  GCC ships a working one in
+  # /usr/lib/gcc/aarch64-pc-msys/15/include, and cross-msysarm64-runtime-devel
+  # ships newlib's at four paths under the sysroot, including
+  # ${_sysroot}/usr/include.  The newlib copy declares
+  #
+  #     typedef _Atomic(___wchar_t) atomic_wchar_t;
+  #
+  # and nothing in this sysroot defines ___wchar_t, so including it is a hard
+  # error.  Normally that does not matter: GCC's own include directory is
+  # searched first, and gcc drops a -I naming a directory it already treats as a
+  # system directory.  curl defeats both.  Its CURL_CONVERT_INCLUDE_TO_ISYSTEM
+  # macro rewrites every -I in CFLAGS/CPPFLAGS to -isystem, which is neither
+  # dropped as a duplicate nor ordered after GCC's own headers - so the -I flags
+  # that pkg-config returns for openssl, zlib and zstd (all
+  # ${_sysroot}/usr/include) end up ahead of GCC's, and the broken newlib header
+  # wins.  This is what the standalone script's comment about "autoreconf
+  # isystem breakage" is warning about; not passing CPPFLAGS is not enough,
+  # because these -I flags come from pkg-config rather than from the recipe.
+  #
+  # The right fix is in cross-msysarm64-runtime-devel, which should not be
+  # shipping newlib's stdatomic.h - the same over-shipping that puts newlib's
+  # iconv.h in front of libiconv's, noted in the makepkg profile.
+  #
+  # Consequence: curl's global-init lock is a pthread mutex rather than an
+  # atomic spinlock.  GLOBAL_INIT_IS_THREADSAFE is still defined, so
+  # curl_global_init() remains thread-safe.
+  export ac_cv_header_stdatomic_h=no
+
+  # Appended, never prepended - see cross-msysarm64-xz for why.
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # The option list is the standalone build script's, verbatim and in its order.
+  # It is the native recipe's list with every optional dependency that has no
+  # cross-msysarm64 package turned off:
+  #
+  #   --without-brotli --without-libidn2 --without-libssh2 --without-libpsl
+  #   --without-nghttp3 --without-ngtcp2
+  #
+  # so this curl has no brotli decompression, no IDN hostnames, no SCP/SFTP, no
+  # public-suffix cookie checking and no HTTP/3.  HTTPS, HTTP/1.1 and HTTP/2 are
+  # unaffected, which is what pacman and git need.  --with-zstd is the script's
+  # addition over the native list; cross-msysarm64-zstd is installed, so it is
+  # kept.
+  #
+  # Three things differ from the script:
+  #
+  # * --disable-ipv6, where the script passes --enable-ipv6.  This is forced by
+  #   a defect in the aarch64 msys2-runtime, not a preference: getaddrinfo does
+  #   not work there.  curl's configure probe compiles and runs on this host -
+  #   ARM64 binaries execute natively - and reports
+  #
+  #       checking if getaddrinfo seems to work... no
+  #
+  #   after the test program exits 1.  Reduced to a standalone program, the
+  #   runtime's getaddrinfo fails on a numeric address that cannot require any
+  #   lookup at all,
+  #
+  #       getaddrinfo("127.0.0.1", AI_NUMERICHOST) -> rc=11 EAI_SYSTEM
+  #
+  #   and hangs indefinitely on a name.  gethostbyname on the same runtime
+  #   resolves the numeric case correctly, so this is specific to getaddrinfo.
+  #   With it missing, curl 8.21's curl_setup.h refuses to build IPv6 at all -
+  #
+  #       error "Unexpected build: IPv6 is enabled but getaddrinfo was not found"
+  #
+  #   - so --enable-ipv6 does not compile.  --disable-ipv6 selects the
+  #   gethostbyname resolver, which is what the runtime can actually do.
+  #
+  #   The script does not hit this because it builds curl 8.15.0, which had no
+  #   such check: that curl configured IPv6 on and then resolved through
+  #   gethostbyname regardless, so the working result is the same.  Restore
+  #   --enable-ipv6 once the runtime's getaddrinfo is fixed.
+  #
+  # * The triplet.  The script passes --host=aarch64-pc-msys, and it copies
+  #   "msys-curl-*.dll ... || true" at the end for the same reason libarchive
+  #   does: libtool's shared-library rules key off host_os with the case list
+  #   "cygwin* | mingw* | windows* | pw32* | cegcc*", which does not match msys,
+  #   so no DLL is produced at all.  git links libcurl, so the cygwin spelling
+  #   is used here as elsewhere in this chain.  Build and host are the same so
+  #   configure runs its AC_RUN_IFELSE probes rather than guessing.
+  #
+  # * --with-ca-bundle.  The script omits it, which leaves this curl with no
+  #   default CA store: every https:// fetch then fails with "unable to get
+  #   local issuer certificate" unless the caller passes --cacert.  The path is
+  #   the native recipe's - /usr/ssl/certs/ca-bundle.crt - and deliberately not
+  #   ${_sysroot}/usr/ssl/...: it is compiled into the binary and read at run
+  #   time on the target, where the sysroot is the root.  The bundle itself
+  #   comes from ca-certificates, which is not part of this chain yet, so it
+  #   will not resolve until that is packaged.
+  #
+  # -O0 -g and -specs=${_SPECS} are the script's flags.  The specs file supplies
+  # -e _msys_dll_entry for shared links.  The profile sets !buildflags, so the
+  # flags are passed here rather than inherited.
+  #
+  # The script's comment warns against setting CPPFLAGS here ("Explicitly
+  # avoiding CPPFLAGS as per the warning to prevent autoreconf isystem
+  # breakage"), so unlike libarchive no -I is passed; curl finds the sysroot
+  # headers through the compiler's own search path.
+  local _triplet="${_target%-msys}-cygwin"
+
+  ./configure \
+    --build=${_triplet} \
+    --host=${_triplet} \
+    --prefix=${_sysroot}/usr \
+    --enable-shared \
+    --enable-static \
+    --enable-optimize \
+    --disable-ipv6 \
+    --disable-ares \
+    --without-brotli \
+    --without-gssapi \
+    --without-libidn2 \
+    --without-librtmp \
+    --without-libssh2 \
+    --with-openssl \
+    --without-nghttp3 \
+    --without-ngtcp2 \
+    --with-zlib \
+    --without-libpsl \
+    --with-zstd \
+    --with-ca-bundle=/usr/ssl/certs/ca-bundle.crt \
+    CFLAGS="-O0 -g -specs=${_SPECS}" \
+    LDFLAGS="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+
+  make
+
+  grep -q "^dlname='.\+'" lib/libcurl.la 2>/dev/null || {
+    error "libcurl.la has no dlname - libtool produced a static-only build"
+    return 1
+  }
+
+  # TLS is the whole point of this build for git and pacman, and curl's
+  # configure will happily produce a working curl without it.
+  grep -q '^#define USE_OPENSSL 1' lib/curl_config.h || {
+    error "configure did not select OpenSSL - this curl would have no TLS"
+    return 1
+  }
+
+  make DESTDIR="${srcdir}/dest" install
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  install -Dm644 "${srcdir}/${pkgbase}-${pkgver}/COPYING" \
+    "${pkgdir}${_sysroot}/usr/share/licenses/${pkgname}/COPYING"
+
+  [[ -n $(ls "${pkgdir}${_sysroot}"/usr/bin/msys-curl-*.dll 2>/dev/null) ]] || {
+    error "no libcurl DLL was installed"; return 1
+  }
+  [[ -f ${pkgdir}${_sysroot}/usr/bin/curl.exe ]] || {
+    error "curl.exe was not installed"; return 1
+  }
+}
