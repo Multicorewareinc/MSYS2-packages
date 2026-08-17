@@ -36,3 +36,6 @@
 /*/*/tortoisegit.data
 /*/base/
 /*/tmp*/
+
+# built packages and build logs from crossarm64/
+aarch64-pkgs/
