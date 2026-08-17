@@ -1,0 +1,195 @@
+# Maintainer: Alexey Pavlov <Alexpux@gmail.com>
+#
+# aarch64-pc-msys cross build of ncurses, staged into the cross sysroot.
+# Sources and patches are taken unchanged from the native ncurses/ recipe;
+# only the configure triplet and the install prefix differ.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=ncurses
+pkgname=cross-msysarm64-ncurses
+_pkgver=6.6
+pkgver=6.6
+pkgrel=1
+pkgdesc="System V Release 4.0 curses emulation library (${_target})"
+arch=('x86_64')
+url="https://www.gnu.org/software/ncurses/"
+msys2_repository_url="https://github.com/ThomasDickey/ncurses-snapshots"
+msys2_references=(
+  "cpe: cpe:/a:gnu:ncurses"
+  "cpe: cpe:/a:ncurses_project:ncurses"
+)
+license=('spdx:MIT')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip' 'staticlibs')
+source=(https://invisible-island.net/archives/ncurses/${pkgbase}-${_pkgver}.tar.gz{,.asc}
+        "ncurses-6.3-pkgconfig.patch"
+        "ncurses-6.3-cflags-private.patch")
+sha256sums=('355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11'
+            'SKIP'
+            'b8544a607dfbeffaba2b087f03b57ed1fa81286afca25df65f61b04b5f3b3738'
+            '3107029dfb807e338d34641d78329cd6725c58e6b873352621f4b9611a8380bf')
+validpgpkeys=('19882D92DDA4C400C22C0D56CC2AF4472167BE03')  # "Thomas E. Dickey (self-signed w/o SHA1) <dickey@invisible-island.net>"
+
+prepare() {
+  cd ${srcdir}/${pkgbase}-${_pkgver}
+
+  # do not leak build-time LDFLAGS into the pkgconfig files:
+  # https://bugs.archlinux.org/task/68523
+  patch -p1 -i ${srcdir}/ncurses-6.3-pkgconfig.patch
+
+  patch -p1 -i ${srcdir}/ncurses-6.3-cflags-private.patch
+}
+
+build() {
+  cd ${srcdir}/${pkgbase}-${_pkgver}
+  msg2 "Configuring ${pkgname}: host ${_target}, build ${_BUILD}"
+
+  # ncurses does not use libtool; --with-shared selects its own mk-shared-lib
+  # rules, so none of the generated-libtool msys problems apply here.
+  #
+  # make_keys/make_hash/report_offsets are helper programs run during the build.
+  # They #include names.c and link no ncurses DLL, but ncurses only puts
+  # -DNCURSES_STATIC in CFLAGS_NORMAL, never in BUILD_CPPFLAGS; configure leaves
+  # BUILD_CPPFLAGS empty unless asked.  With __CYGWIN__ defined and
+  # NCURSES_STATIC absent, ncurses_dll.h resolves NCURSES_EXPORT_VAR to
+  # __declspec(dllimport), so the tables in names.c come out as
+  # "variable 'boolnames' definition is marked dllimport".
+  #
+  # -D_GNU_SOURCE: the widec build needs wcwidth(), which wchar.h hides behind
+  # "#if __XSI_VISIBLE", and nothing here raises __XSI_VISIBLE above 0.
+  # configure is supposed to settle this, but CF_XOPEN_SOURCE's second probe
+  # compiles "#ifndef _XOPEN_SOURCE / #error" *with* -D_XOPEN_SOURCE=600
+  # already added, so it succeeds, and configure reads that as "the macro is
+  # predefined" - it says so in a warning - and adds nothing.  Without it every
+  # widec object fails on "implicit declaration of function 'wcwidth'".
+  #
+  # Priming cf_cv_xopen_source does not stick: the macro runs twice and the
+  # value is cleared in between.  Setting CPPFLAGS is what actually holds.
+  # _GNU_SOURCE rather than _XOPEN_SOURCE=600 because it is a superset - it
+  # raises __XSI_VISIBLE to 700 while leaving __BSD_VISIBLE set, so it cannot
+  # hide the BSD-only declarations ncurses also relies on.
+  #
+  # Not cross-specific: both the native and the cross compiler behave
+  # identically here, verified by compiling a wcwidth() call with each.
+  #
+  # --prefix is the sysroot, which the cross gcc already searches by default,
+  # so nothing downstream needs -I/-L plumbing.  ncurses spells DESTDIR
+  # --with-install-prefix; leave it unset and pass DESTDIR to make install.
+  ./configure \
+    --build=${_BUILD} \
+    --host=${_target} \
+    --prefix=${_sysroot}/usr \
+    --without-ada \
+    --with-shared \
+    --with-cxx-shared \
+    --with-normal \
+    --without-debug \
+    --disable-relink \
+    --disable-rpath \
+    --with-ticlib \
+    --without-termlib \
+    --enable-widec \
+    --enable-ext-colors \
+    --enable-ext-mouse \
+    --enable-sp-funcs \
+    --with-wrap-prefix=ncwrap_ \
+    --enable-sigwinch \
+    --disable-term-driver \
+    --enable-colorfgbg \
+    --enable-tcap-names \
+    --disable-termcap \
+    --disable-mixed-case \
+    --with-pkg-config \
+    --enable-pc-files \
+    --with-manpage-format=normal \
+    --with-manpage-aliases \
+    --with-default-terminfo-dir=${_sysroot}/usr/share/terminfo \
+    --enable-echo \
+    --mandir=${_sysroot}/usr/share/man \
+    --includedir=${_sysroot}/usr/include/ncursesw \
+    --with-build-cc="${CC_FOR_BUILD}" \
+    --with-build-cflags=-D_XOPEN_SOURCE_EXTENDED \
+    --with-build-cppflags=-DNCURSES_STATIC \
+    --with-pkg-config-libdir=${_sysroot}/usr/lib/pkgconfig \
+    CPPFLAGS="-D_GNU_SOURCE ${CPPFLAGS}"
+
+  # Two link fixes, applied to the one script ncurses uses to link DLLs so that
+  # executables (tic, infocmp, ...) are left alone.  configure generates this
+  # file, so the edit has to happen after configure and before make.
+  #
+  # -e _msys_dll_entry
+  #     The packaged cross-msysarm64-gcc has the wrong DLL entry point in its
+  #     specs: it emits -e _cygwin_dll_entry, while the native msys gcc emits
+  #     -e _msys_dll_entry, and only the latter exists in this sysroot
+  #     (libcygwin.a and libmsys-2.0.a both define _msys_dll_entry, neither
+  #     defines _cygwin_dll_entry).  ld then says "cannot find entry symbol
+  #     _cygwin_dll_entry; not setting start address" and produces a DLL whose
+  #     entry point is 0, so the runtime never initialises it.  This is a bug in
+  #     the gcc package, worked around here; the real fix belongs in its specs.
+  #
+  # -u _pei386_runtime_relocator
+  #     Auto-import makes ld synthesise a *_ertr*.o that calls the pseudo-reloc
+  #     handler.  That object is created after libcygwin.a has already been
+  #     scanned, so the member defining the symbol is never pulled in and the
+  #     link fails with "undefined reference to _pei386_runtime_relocator".
+  #     Forcing the reference up front pulls the member in while the archive is
+  #     still on the command line.  Only libraries that import *data* hit this,
+  #     which is why libncursesw links without it but libticw does not.
+  sed -i 's|^exec \$\*|exec $* -Wl,-e,_msys_dll_entry -Wl,-u,_pei386_runtime_relocator|' \
+    mk_shared_lib.sh
+  grep -q '_msys_dll_entry' mk_shared_lib.sh || {
+    error "failed to patch mk_shared_lib.sh"; return 1
+  }
+
+  make
+
+  # A silent degradation to static-only is the failure mode that cost the most
+  # time in the earlier hand build: the link succeeds, and only much later does
+  # a consumer fail on undefined __imp_* symbols.  Fail loudly here instead.
+  local dlls
+  dlls=$(ls lib/*.dll 2>/dev/null | wc -l)
+  [[ ${dlls} -ge 1 ]] || {
+    error "ncurses built no import libraries/DLLs - shared build silently disabled"
+    return 1
+  }
+
+  make DESTDIR=${srcdir}/dest install
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  # The widec build names everything *w.  Consumers - readline and bash among
+  # them - probe for the unsuffixed names, so provide the same aliases the
+  # native ncurses-devel package does.
+  cd "${pkgdir}${_sysroot}/usr/lib"
+  local l
+  for l in ncurses curses; do
+    cp -f libncursesw.a     "lib${l}.a"
+    cp -f libncursesw.dll.a "lib${l}.dll.a"
+  done
+  for l in panel menu form; do
+    [[ -f "lib${l}w.a"     ]] && cp -f "lib${l}w.a"     "lib${l}.a"
+    [[ -f "lib${l}w.dll.a" ]] && cp -f "lib${l}w.dll.a" "lib${l}.dll.a"
+  done
+
+  cd pkgconfig
+  local p
+  for p in form menu ncurses++ ncurses panel tic; do
+    [[ -f "${p}w.pc" ]] && cp -f "${p}w.pc" "${p}.pc"
+  done
+
+  # ncursesw/*.h duplicated at the top of includedir, as the native recipe does,
+  # so <curses.h> resolves without -I.../ncursesw.
+  cd "${pkgdir}${_sysroot}/usr/include"
+  cp -rf ncursesw ncurses
+  cp -f ncursesw/*.h .
+
+  install -Dm644 "${srcdir}/${pkgbase}-${_pkgver}/COPYING" \
+    "${pkgdir}${_sysroot}/usr/share/licenses/${pkgname}/LICENSE"
+}
