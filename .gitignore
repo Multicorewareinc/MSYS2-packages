@@ -1,8 +1,7 @@
-
-# cross build artefacts
-cross-msysarm64-*/src/
-cross-msysarm64-*/pkg/
-cross-msysarm64-*/*.tar.gz
+cross-msysarm64-*/*.sig
+cross-msysarm64-*/*.tar.lz
+cross-msysarm64-*/*.tgz
+s-msysarm64-*/*.tar.gz
 cross-msysarm64-*/*.tar.gz.asc
 cross-msysarm64-*/*.pkg.tar.zst
 
