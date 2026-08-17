@@ -1,0 +1,154 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of libgpg-error, staged into the cross sysroot.
+# Sources and both patches are taken unchanged from the native libgpg-error/
+# recipe.  See build() for how this differs from the tested standalone script.
+#
+# NOTE on fetching: gnupg.org answers 403 to curl from some networks, this one
+# included.  The source URL is left as the native recipe's; if makepkg cannot
+# download it, fetch the tarball and its .sig by hand into this directory from
+# a mirror, e.g.
+#     https://www.mirrorservice.org/sites/ftp.gnupg.org/gcrypt/libgpg-error/
+# The checksums below are the native recipe's and are what verify it.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=libgpg-error
+pkgname=cross-msysarm64-libgpg-error
+pkgver=1.61
+pkgrel=1
+pkgdesc="Support library for libgcrypt (${_target})"
+arch=('x86_64')
+url="https://gnupg.org"
+msys2_repository_url="https://dev.gnupg.org/source/libgpg-error/"
+license=('spdx:LGPL-2.1-or-later')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-libiconv' 'cross-msysarm64-gettext'
+         'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip' 'staticlibs')
+source=(https://gnupg.org/ftp/gcrypt/libgpg-error/${pkgbase}-${pkgver}.tar.bz2{,.sig}
+        gnulib-weak.patch
+        gpg-error-static-linking.patch)
+sha256sums=('7a85413f2bc354f4f8aa832b718af122e48965e9e0eb9012ee659c13c6385c93'
+            'SKIP'
+            '0df2f92ab866e9d9824086cca89ff286cfdfad5e659cb2b655061e0c7e562e3a'
+            '9780e3e397b983ef52d5dae22d54c4453a47bddf04eafa2f874c75038e3485eb')
+validpgpkeys=('5B80C5754298F0CB55D8ED6ABCEF7E294B092E28'
+              '6DAA6E64A76D2840571B4902528897B826403ADA'
+              'AC8E115BF73E2D8D47FA9908E98E9B2D19C6C8BD'
+              '02F38DFF731FF97CB039A1DA549E695E905BA208')
+
+prepare() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  # The native recipe's patches, unchanged.
+  patch -p1 -i ${srcdir}/gnulib-weak.patch
+  patch -p1 -i ${srcdir}/gpg-error-static-linking.patch
+
+  # gpgrt-config extracts characters one at a time with
+  #
+  #     __result="$__result$(printf %c "$__string")"
+  #     __string="${__string#$(printf %c "$__string")}"
+  #
+  # - two command substitutions, so two forks, for every character of every
+  # argument it parses.  fork is expensive on msys2 generally and far worse on
+  # this runtime, and libassuan's configure calls gpgrt-config repeatedly; the
+  # standalone script hits this hard enough that it patches the installed copy
+  # in the sysroot before building libassuan.  The same edit is made here, in
+  # the source, so the installed gpgrt-config is correct for everyone rather
+  # than being fixed up afterwards by whoever builds next.
+  #
+  # ${__string%"${__string#?}"} is the first character with no fork at all, and
+  # ${__string#?} drops it - pure parameter expansion, same result.
+  sed -i \
+    -e 's/__result="$__result$(printf %c "$__string")"/__c="${__string%"${__string#?}"}"; __result="$__result${__c}"/' \
+    -e 's/__string="${__string#$(printf %c "$__string")}"/__string="${__string#?}"/' \
+    src/gpgrt-config.in
+  grep -q 'printf %c' src/gpgrt-config.in &&
+    { echo "gpgrt-config fork loop still present - source has moved" >&2; return 1; }
+
+  autoreconf -fi
+}
+
+build() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  export lt_cv_deplibs_check_method='pass_all'
+  export MSYSTEM=CYGWIN
+
+  # Appended, never prepended - see cross-msysarm64-xz for why.
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # Native for the target rather than cross.  This matters more here than
+  # anywhere else in the chain.
+  #
+  # libgpg-error needs the memory layout of the target's pthread mutex, which it
+  # gets either from a pre-generated src/syscfg/lock-obj-pub.<triplet>.h or by
+  # compiling and RUNNING src/gen-posix-lock-obj.  Upstream ships 42 of those
+  # headers and none of them is for cygwin or msys, so on this target the
+  # generator is the only route.
+  #
+  # The standalone script builds cross (--host=aarch64-pc-msys with an x86_64
+  # build), so configure cannot run the generator, and the script works around
+  # it by compiling gen-posix-lock-obj.c with the *host* gcc and using its
+  # output - which describes the x86_64 runtime's mutex, not the target's.  It
+  # happens not to break because msys2's pthread_mutex_t is a pointer-sized
+  # handle on both, but it is not something to rely on.
+  #
+  # Built native, configure compiles the generator with the cross compiler and
+  # runs it directly - ARM64 binaries execute natively on this host - so the
+  # layout is measured on the real target.  The same applies to the
+  # gpg-error-config-test.sh that runs during make, which the script has to
+  # disable with two seds because a cross build cannot execute it.
+  #
+  # The cygwin spelling is used because libtool's host_os case list
+  # "cygwin* | mingw* | windows* | pw32* | cegcc*" does not match msys, and
+  # without a match no DLL is produced at all.
+  #
+  # -O0 -g and -specs=${_SPECS} are the script's flags; the specs file supplies
+  # -e _msys_dll_entry for shared links.  The profile sets !buildflags, so they
+  # are passed here rather than inherited.
+  local _triplet="${_target%-msys}-cygwin"
+
+  ./configure \
+    --build=${_triplet} \
+    --host=${_triplet} \
+    --prefix=${_sysroot}/usr \
+    --without-libiconv-prefix \
+    --without-libintl-prefix \
+    --enable-install-gpg-error-config \
+    --enable-shared \
+    --enable-static \
+    CFLAGS="-O0 -g -specs=${_SPECS}" \
+    CXXFLAGS="-O0 -g -specs=${_SPECS}" \
+    LDFLAGS="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+
+  # no_undefined=-no-undefined is the native recipe's.
+  make no_undefined=-no-undefined
+
+  grep -q "^dlname='.\+'" src/libgpg-error.la 2>/dev/null || {
+    error "libgpg-error.la has no dlname - libtool produced a static-only build"
+    return 1
+  }
+
+  make DESTDIR="${srcdir}/dest" install
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  install -Dm644 "${srcdir}/${pkgbase}-${pkgver}/COPYING.LIB" \
+    "${pkgdir}${_sysroot}/usr/share/licenses/${pkgname}/COPYING.LIB"
+
+  # share/info/dir is rebuilt by install-info and owned by no package; shipping
+  # it collides with every other package that installs info pages.
+  rm -f "${pkgdir}${_sysroot}/usr/share/info/dir"
+
+  [[ -n $(ls "${pkgdir}${_sysroot}"/usr/bin/msys-gpg-error-*.dll 2>/dev/null) ]] || {
+    error "no libgpg-error DLL was installed"; return 1
+  }
+}
