@@ -1,0 +1,34 @@
+diff -rwu orig/funmap.c readline-7.0/funmap.c
+--- orig/funmap.c	2018-03-01 18:12:03.726007400 +0900
++++ readline-7.0/funmap.c	2018-03-01 18:12:09.403227100 +0900
+@@ -116,7 +116,7 @@
+   { "non-incremental-reverse-search-history-again", rl_noninc_reverse_search_again },
+   { "old-menu-complete", rl_old_menu_complete },
+   { "overwrite-mode", rl_overwrite_mode },
+-#if defined (_WIN32)
++#if defined (_WIN32) || defined (__CYGWIN__)
+   { "paste-from-clipboard", rl_paste_from_clipboard },
+ #endif
+   { "possible-completions", rl_possible_completions },
+--- readline-8.3/kill.c.orig	2025-07-27 17:13:05.489749200 +0200
++++ readline-8.3/kill.c	2025-07-27 17:14:55.165199700 +0200
+@@ -861,7 +861,7 @@
+ }
+ 
+ /* A special paste command for Windows users. */
+-#if defined (_WIN32)
++#if defined (_WIN32) || defined (__CYGWIN__)
+ #define WIN32_LEAN_AND_MEAN
+ 
+ #include <windows.h>
+--- readline-8.2/readline.h.orig	2022-10-31 09:09:50.714856900 +0100
++++ readline-8.2/readline.h	2022-10-31 09:10:12.800049500 +0100
+@@ -180,7 +180,7 @@
+ extern int rl_yank_last_arg (int, int);
+ extern int rl_bracketed_paste_begin (int, int);
+ /* Not available unless _WIN32 is defined. */
+-#if defined (_WIN32)
++#if defined (_WIN32) || defined (__CYGWIN__)
+ extern int rl_paste_from_clipboard (int, int);
+ #endif
+ 

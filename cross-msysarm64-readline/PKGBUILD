@@ -1,0 +1,132 @@
+# Maintainer: Alexey Pavlov <Alexpux@gmail.com>
+#
+# aarch64-pc-msys cross build of readline, staged into the cross sysroot.
+# Sources and patches are taken unchanged from the native readline/ recipe;
+# only the configure triplets and the install prefix differ.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=readline
+pkgname=cross-msysarm64-readline
+_basever=8.3
+_patchlevel=003 #prepare for some patches
+pkgver=${_basever}.${_patchlevel}
+pkgrel=1
+pkgdesc="GNU readline library (${_target})"
+arch=('x86_64')
+url="https://tiswww.case.edu/php/chet/readline/rltop.html"
+msys2_repository_url="https://cgit.git.savannah.gnu.org/cgit/readline.git"
+msys2_references=(
+  "anitya: 4173"
+  "cpe: cpe:/a:gnu:readline"
+)
+license=('spdx:GPL-3.0-or-later')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-ncurses' 'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!emptydirs' '!strip' 'staticlibs')
+source=(https://ftp.gnu.org/gnu/readline/readline-${_basever}.tar.gz{,.sig}
+        inputrc
+        readline-7.0.3-3.clipboard.patch
+        readline-7.0.3-3.src.patch
+        readline-6.3-msys2.patch
+        readline-6.3-paste-utf8.patch)
+if [ $_patchlevel -gt 0 ]; then
+    for (( p=1; p<=$((10#${_patchlevel})); p++ )); do
+        source=(${source[@]} https://ftp.gnu.org/gnu/readline/readline-${_basever}-patches/readline${_basever//./}-$(printf "%03d" $p){,.sig})
+    done
+fi
+sha256sums=('fe5383204467828cd495ee8d1d3c037a7eba1389c22bc6a041f627976f9061cc'
+            'SKIP'
+            '6ff0b86e0b98f453b3ce06270c649ef336e2b881be0bc7dd8f5d470afbdac75e'
+            'ba2bdb5530f60c04012e8ed4635123ec815a7711cd96ca1211e71a7fe897e6ea'
+            'cdb4f97d641acde59ada6f22141e6a6743f756fc183f5cb43d6c9f8ae563da29'
+            '96d002c8815b29ed5dbe89d9b251182c6e60111acc3d236acb8d1bbb2f896457'
+            '8ce80150b6da67c551ffebb18650cfceef8d5e0eddbc848bcef20b8ec176af05'
+            '21f0a03106dbe697337cd25c70eb0edbaa2bdb6d595b45f83285cdd35bac84de'
+            'SKIP'
+            'e27364396ba9f6debf7cbaaf1a669e2b2854241ae07f7eca74ca8a8ba0c97472'
+            'SKIP'
+            '72dee13601ce38f6746eb15239999a7c56f8e1ff5eb1ec8153a1f213e4acdb29'
+            'SKIP')
+validpgpkeys=('7C0135FB088AAF6C66C650B9BB5869F064EA74AB') # Chet Ramey
+
+prepare() {
+  cd ${srcdir}/${pkgbase}-${_basever}
+  for (( p=1; p<=$((10#${_patchlevel})); p++ )); do
+    msg "applying patch readline${_basever//./}-$(printf "%03d" $p)"
+    patch -p0 -i $srcdir/readline${_basever//./}-$(printf "%03d" $p)
+  done
+  patch -p2 -i ${srcdir}/readline-7.0.3-3.src.patch
+  patch -p1 -i ${srcdir}/readline-6.3-msys2.patch
+  patch -p1 -i ${srcdir}/readline-6.3-paste-utf8.patch
+  patch -p1 -i ${srcdir}/readline-7.0.3-3.clipboard.patch
+}
+
+build() {
+  CFLAGS+=" -Wno-error=incompatible-pointer-types"
+
+  # See cross-msysarm64-ncurses for the full reasoning.  In short: the packaged
+  # cross gcc's specs name the wrong DLL entry point (_cygwin_dll_entry, which
+  # nothing in this sysroot defines, rather than _msys_dll_entry), and the
+  # pseudo-reloc handler is only referenced by an object ld synthesises after
+  # the startup archive has been scanned.  Both need saying explicitly.
+  local _dllflags="-Wl,-e,_msys_dll_entry -Wl,-u,_pei386_runtime_relocator"
+
+  # bash_cv_termcap_lib is passed by the native recipe too; it short-circuits a
+  # probe that would otherwise try to link and run a test program.
+  local _common=(
+    --prefix=${_sysroot}/usr
+    --build=${_BUILD}
+    --host=${_target}
+    --with-curses
+    bash_cv_termcap_lib=libncurses
+  )
+
+  msg2 "static pass"
+  mkdir -p ${srcdir}/build-static && cd ${srcdir}/build-static
+  ../${pkgbase}-${_basever}/configure \
+    "${_common[@]}" \
+    --disable-shared \
+    --enable-static \
+    CFLAGS="${CFLAGS} -DNCURSES_STATIC"
+  make
+  make DESTDIR=${srcdir}/dest install
+
+  msg2 "shared pass"
+  mkdir -p ${srcdir}/build-shared && cd ${srcdir}/build-shared
+  ../${pkgbase}-${_basever}/configure \
+    "${_common[@]}" \
+    --disable-static \
+    --enable-shared \
+    LDFLAGS="${LDFLAGS} ${_dllflags}"
+  make
+  make DESTDIR=${srcdir}/dest install
+
+  # The shared pass silently falling back to static-only is the failure mode
+  # worth catching here rather than three packages later.
+  [[ -n $(ls ${srcdir}/dest${_sysroot}/usr/bin/*.dll 2>/dev/null) ]] || {
+    error "readline produced no DLL - the shared pass fell back to static"
+    return 1
+  }
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  # readline's DLL is msys-readline8.dll, so its import library is named
+  # msys-readline8.dll.a.  A plain -lreadline only looks for libreadline.dll.a,
+  # which is how the earlier hand build ended up with undefined __imp_rl_*
+  # symbols in bash.  Provide the conventional name alongside.
+  cd "${pkgdir}${_sysroot}/usr/lib"
+  local a
+  for a in readline history; do
+    if [[ -f msys-${a}8.dll.a && ! -f lib${a}.dll.a ]]; then
+      cp -f msys-${a}8.dll.a lib${a}.dll.a
+    fi
+  done
+
+  install -Dm644 "${srcdir}/inputrc" "${pkgdir}${_sysroot}/etc/inputrc"
+}

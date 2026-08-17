@@ -51,6 +51,10 @@ build() {
   # ncurses does not use libtool; --with-shared selects its own mk-shared-lib
   # rules, so none of the generated-libtool msys problems apply here.
   #
+  # --disable-stripping: ncurses installs programs with "install -s", which
+  # runs the bare host strip over an aarch64 PE and dies with "file format not
+  # recognized".  This is the same reason the makepkg profile sets !strip.
+  #
   # make_keys/make_hash/report_offsets are helper programs run during the build.
   # They #include names.c and link no ncurses DLL, but ncurses only puts
   # -DNCURSES_STATIC in CFLAGS_NORMAL, never in BUILD_CPPFLAGS; configure leaves
@@ -90,6 +94,7 @@ build() {
     --without-debug \
     --disable-relink \
     --disable-rpath \
+    --disable-stripping \
     --with-ticlib \
     --without-termlib \
     --enable-widec \
