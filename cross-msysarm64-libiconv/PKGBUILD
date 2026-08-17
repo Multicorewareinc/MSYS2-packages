@@ -1,0 +1,152 @@
+# Maintainer: Alexey Pavlov <Alexpux@gmail.com>
+#
+# aarch64-pc-msys build of libiconv, staged into the cross sysroot.
+# Sources and patches are taken unchanged from the native libiconv/ recipe;
+# only the configure triplets and the install prefix differ.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=libiconv
+pkgname=cross-msysarm64-libiconv
+pkgver=1.19
+pkgrel=1
+pkgdesc='Libiconv is a conversion library (aarch64-pc-msys)'
+groups=('cross-msysarm64')
+arch=('x86_64')
+depends=('cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+url='https://www.gnu.org/software/libiconv/'
+msys2_repository_url='https://git.savannah.gnu.org/gitweb/?p=libiconv.git'
+license=('spdx:GPL-3.0-only AND LGPL-2.1-only')
+source=("https://ftp.gnu.org/pub/gnu/${pkgbase}/${pkgbase}-${pkgver}.tar.gz"
+        1.16-aliases.patch
+        1.16-cross-install.patch
+        1.16-wchar.patch
+        libiconv-1.16-msysize.patch
+        0001-fixes-building-with-gcc-15.patch)
+sha256sums=('88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6'
+            'd447b5467867b72041737d0d35720c30e4edf4845b9bcd1858b0f44e126a179d'
+            '1e24e990d67fd8fbb9ece6318880127ff06b84d2d278dd18b0643044e64e5edf'
+            'c2f4b2d0ce0cd7d2dc98aa1d5e2db31c3b88c1b399d3706dbdacfaef3c13d70c'
+            '8a43391e9402e99f70ef3f5dfbb8dda7ab7a30d91c00189ce5ab38c1bc6352d8'
+            '126065bc77421edfe0eb01ca50c2920742f0ddddb5860f8eec06d0e497cbcd20')
+options=('!strip' 'staticlibs' 'libtool')
+
+apply_patch_with_msg() {
+  for _patch in "$@"
+  do
+    msg2 "Applying $_patch"
+    patch -Nbp1 -i "${srcdir}/$_patch"
+  done
+}
+
+prepare() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  apply_patch_with_msg \
+    1.16-aliases.patch \
+    1.16-cross-install.patch \
+    1.16-wchar.patch \
+    libiconv-1.16-msysize.patch \
+    0001-fixes-building-with-gcc-15.patch
+
+  cp -f srcm4/* m4/
+
+  (cd libcharset && autoreconf -fiv)
+  autoreconf -fiv
+}
+
+build() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  # The triplet says cygwin, not msys, and that is not cosmetic: libiconv builds
+  # its shared library with libtool, and libtool's naming and linking rules key
+  # off host_os with the case list
+  #     cygwin* | mingw* | windows* | pw32* | cegcc*
+  # which does not match msys.  Built as aarch64-pc-msys, configure reports
+  # "checking if libtool supports shared libraries... no", library_names_spec
+  # comes out empty, shrext_cmds becomes .so, and the result is libiconv.a with
+  # dlname='' and no DLL whatsoever.
+  #
+  # This is not a workaround invented here: stock MSYS2 sets
+  # CHOST="x86_64-pc-cygwin" in its own makepkg.conf, so every native MSYS2
+  # package - libiconv included - is already configured as cygwin.  Only this
+  # build root's /etc/makepkg.conf was customised to say -msys.  The native
+  # gettext recipe makes the same substitution explicitly in its build().
+  #
+  # Native for the target rather than cross, for the reason documented in
+  # cross-msysarm64-bash: with --host != --build autoconf skips every
+  # AC_RUN_IFELSE and answers it with a guess.  CC/AR/... come from the makepkg
+  # profile, so the triplet cannot redirect tool lookup to the host's gcc.
+  # --enable-relocatable makes libiconv export libiconv_set_relocation_prefix.
+  # gettext's gnulib relocatable.c calls it from set_relocation_prefix() under
+  #     #if DEPENDS_ON_LIBICONV && HAVE_ICONV && _LIBICONV_VERSION >= 0x0109
+  # with -DDEPENDS_ON_LIBICONV=1 hardcoded in intl's Makefile, so linking
+  # libintl fails with "undefined reference to libiconv_set_relocation_prefix"
+  # if libiconv does not provide it.  The shipped MSYS2 msys-iconv-2.dll
+  # exports it - 8 exports against our 7 without this flag - so this matches
+  # what the distribution actually ships rather than working around the symbol
+  # by disabling relocation in gettext.
+  local _triplet="${_target%-msys}-cygwin"
+
+  PATH="${_sysroot}/bin:${_sysroot}/usr/bin:${PATH}"
+  export PATH
+
+  ./configure \
+    --prefix=${_sysroot}/usr \
+    --build=${_triplet} \
+    --host=${_triplet} \
+    --without-libintl-prefix \
+    --enable-static \
+    --enable-shared \
+    --enable-relocatable \
+    --enable-extra-encodings
+
+  make
+
+  # libiconv uses libtool.  A shared library whose dependencies have no shared
+  # version makes libtool set droppeddeps=yes and silently emit a static-only
+  # library with dlname='' - the link succeeds and only a later consumer fails
+  # on undefined __imp_* symbols.  Catch it here instead.
+  grep -q "^dlname='.\+'" lib/libiconv.la 2>/dev/null || {
+    error "libiconv.la has no dlname - libtool fell back to a static-only build"
+    return 1
+  }
+
+  # Install the library only, not the iconv program.
+  #
+  # The top-level "install" target also descends into src/, which with
+  # --enable-relocatable builds a relocation wrapper around iconv.exe from
+  # progreloc.c.  That link fails with "undefined reference to `rpl_open'" -
+  # the wrapper is linked without the gnulib replacements it was compiled
+  # against.  It is a libiconv 1.19 bug, and it does not touch the library:
+  # lib/.libs/msys-iconv-2.dll and libcharset are already built and correct by
+  # then.
+  #
+  # Skipping it also matches how MSYS2 splits this package: libiconv ships the
+  # DLLs, iconv ships the program, libiconv-devel the headers and import libs.
+  # Nothing in this chain needs iconv.exe.
+  local _dest="${srcdir}/dest"
+  local _prefix="${_sysroot}/usr"
+  make -C libcharset install DESTDIR="${_dest}" \
+       prefix="${_prefix}" exec_prefix="${_prefix}" libdir="${_prefix}/lib"
+  make -C lib install DESTDIR="${_dest}" \
+       prefix="${_prefix}" exec_prefix="${_prefix}" libdir="${_prefix}/lib"
+  install -Dm644 include/iconv.h.inst "${_dest}${_prefix}/include/iconv.h"
+
+  # The whole reason for --enable-relocatable: gettext's intl links against
+  # this symbol.  Fail here rather than three packages downstream.
+  local _dll
+  _dll=$(ls "${_dest}${_prefix}"/bin/msys-iconv-*.dll 2>/dev/null | head -1)
+  [[ -n ${_dll} ]] || { error "no libiconv DLL was installed"; return 1; }
+  ${_target}-objdump -p "${_dll}" | grep -q 'libiconv_set_relocation_prefix' || {
+    error "libiconv does not export libiconv_set_relocation_prefix - gettext's intl will not link"
+    return 1
+  }
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+}

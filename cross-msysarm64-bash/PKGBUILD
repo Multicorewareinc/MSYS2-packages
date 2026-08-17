@@ -26,6 +26,7 @@ msys2_references=(
 validpgpkeys=('7C0135FB088AAF6C66C650B9BB5869F064EA74AB') # Chet Ramey
 groups=('cross-msysarm64')
 depends=('cross-msysarm64-readline' 'cross-msysarm64-ncurses'
+         'cross-msysarm64-gettext' 'cross-msysarm64-libiconv'
          'cross-msysarm64-runtime-devel')
 makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
 options=('!strip' 'staticlibs')
@@ -95,11 +96,12 @@ build() {
   PATH="${_sysroot}/bin:${_sysroot}/usr/bin:${PATH}"
   export PATH
 
-  # No gettext in the chain.  --without-libintl-prefix is what the native
-  # recipe passes, and with no libintl in the sysroot configure simply finds
-  # none and builds bash without external NLS.  That keeps gettext and libiconv
-  # - by far the most awkward packages in the earlier hand build - out of the
-  # dependency graph entirely.  The result is checked below.
+  # Linked against the real libintl and libiconv from the sysroot, rather than
+  # bash's bundled lib/intl.  The native recipe passes --without-libintl-prefix
+  # /--without-libiconv-prefix, which only tells gettext's m4 not to go hunting
+  # in extra prefixes; here the libraries live in the sysroot the compiler
+  # already searches, so name that prefix explicitly and let configure find
+  # them.  Verified after the build by checking bash.exe's imports.
   #
   # bash_cv_* short-circuit probes that would otherwise need to run a test
   # program; the native recipe passes the same three.
@@ -111,8 +113,9 @@ build() {
     --localstatedir=${_sysroot}/var \
     --enable-static-link \
     --enable-readline \
-    --without-libintl-prefix \
-    --without-libiconv-prefix \
+    --enable-nls \
+    --with-libintl-prefix=${_sysroot}/usr \
+    --with-libiconv-prefix=${_sysroot}/usr \
     --with-installed-readline \
     --without-bash-malloc \
     --with-curses \
@@ -141,6 +144,22 @@ build() {
        LOCAL_LDFLAGS='-Wl,--export-all,--out-implib,lib$(@:.exe=.dll.a)'
 
   [[ -f bash.exe ]] || { error "bash.exe was not produced"; return 1; }
+
+  # The point of depending on gettext is that bash uses the *installed*
+  # libintl rather than its bundled lib/intl.  If configure fails to find the
+  # external one it silently falls back to the bundle and still builds
+  # successfully, so this has to be checked rather than assumed.
+  #
+  # The check is deliberately not "does bash.exe import an intl DLL": with
+  # --enable-static-link it never will.  The native MSYS2 bash.exe imports only
+  # msys-2.0.dll, KERNEL32 and USER32 while still containing gettext, because
+  # libintl is linked in statically.  What distinguishes the two cases is
+  # whether bash compiled its own copy: when the external library is used,
+  # lib/intl is not built at all.
+  if [[ -f lib/intl/libintl.a ]]; then
+    error "bash built its bundled lib/intl - configure did not find the installed libintl"
+    return 1
+  fi
 }
 
 package() {
