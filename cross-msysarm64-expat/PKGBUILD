@@ -1,0 +1,103 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of expat, staged into the cross sysroot.
+# Sources are taken unchanged from the native expat/ recipe; only the configure
+# triplets and the install prefix differ.
+#
+# This package exists for libarchive, whose tested standalone build script
+# configures with --with-expat.  That script found an expat in the sysroot that
+# no package owns - left there by an earlier hand build - so it would not be
+# reproducible on a clean machine.  This is that expat, packaged.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=expat
+pkgname=cross-msysarm64-expat
+pkgver=2.8.2
+pkgrel=1
+pkgdesc="An XML parser library (${_target})"
+arch=('x86_64')
+url="https://libexpat.github.io/"
+msys2_repository_url="https://github.com/libexpat/libexpat"
+msys2_references=(
+  "cpe: cpe:/a:libexpat_project:libexpat"
+)
+license=('spdx:MIT')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip' 'staticlibs')
+source=(https://github.com/libexpat/libexpat/releases/download/R_${pkgver//./_}/${pkgbase}-${pkgver}.tar.xz{,.asc})
+sha256sums=('3ad89b8588e6644bd4e49981480d48b21289eebbcd4f0a1a4afb1c29f99b6ab4'
+            'SKIP')
+validpgpkeys=('3176EF7DB2367F1FCA4F306B1F9B0E909AF37285') # Sebastian Pipping
+
+prepare() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  ./buildconf.sh -f
+}
+
+build() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  export lt_cv_deplibs_check_method='pass_all'
+  export MSYSTEM=CYGWIN
+
+  # Appended, never prepended: the sysroot bin directories are on PATH only so
+  # binaries compiled during configure can load msys-2.0.dll.  Prepending
+  # shadows the host's tools with target ones and breaks config.status.
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # The triplet says cygwin only because libtool's shared-library rules key off
+  # host_os with the case list "cygwin* | mingw* | windows* | pw32* | cegcc*",
+  # which does not match msys.  Built as aarch64-pc-msys, configure reports
+  # "checking if libtool supports shared libraries... no" and silently emits a
+  # static-only libexpat.a with dlname='' - which is exactly what the earlier
+  # hand build left in the sysroot.  Same reasoning as cross-msysarm64-xz.
+  #
+  # Native for the target rather than cross, so configure runs its AC_RUN_IFELSE
+  # probes instead of answering them with guesses.
+  #
+  # -specs=${_SPECS} supplies -e _msys_dll_entry for shared links; the packaged
+  # cross gcc's stock specs name _cygwin_dll_entry, which nothing in this
+  # sysroot defines, so ld only warns and emits DLLs with AddressOfEntryPoint 0
+  # whose initialisation never runs.  The profile sets !buildflags, so
+  # CFLAGS/LDFLAGS have to be passed here rather than inherited.
+  #
+  # -O0 -g matches the flags the rest of this chain's autotools packages use.
+  local _triplet="${_target%-msys}-cygwin"
+
+  ./configure \
+    --build=${_triplet} \
+    --host=${_triplet} \
+    --prefix=${_sysroot}/usr \
+    --enable-shared \
+    --enable-static \
+    --without-docbook \
+    CFLAGS="-O0 -g -specs=${_SPECS}" \
+    LDFLAGS="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+
+  make
+
+  grep -q "^dlname='.\+'" lib/libexpat.la 2>/dev/null || {
+    error "libexpat.la has no dlname - libtool produced a static-only build"
+    return 1
+  }
+
+  make DESTDIR=${srcdir}/dest install
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  install -Dm644 "${srcdir}/${pkgbase}-${pkgver}/COPYING" \
+    "${pkgdir}${_sysroot}/usr/share/licenses/${pkgname}/COPYING"
+
+  [[ -n $(ls "${pkgdir}${_sysroot}"/usr/bin/msys-expat-*.dll 2>/dev/null) ]] || {
+    error "no libexpat DLL was installed"; return 1
+  }
+}
