@@ -1,0 +1,109 @@
+# Maintainer: Alexey Pavlov <Alexpux@gmail.com>
+#
+# aarch64-pc-msys build of lz4, staged into the cross sysroot.
+# Sources are taken unchanged from the native lz4/ recipe; only the toolchain
+# and the install prefix differ.
+#
+# This package exists for libarchive, whose tested standalone build script
+# configures with --with-lz4.  No lz4 was present in the sysroot when that
+# script ran, so libarchive silently built without lz4 support; packaging it
+# makes the script's own configure line mean what it says.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=lz4
+pkgname=cross-msysarm64-lz4
+pkgver=1.10.0
+pkgrel=1
+pkgdesc="Very fast lossless compression algorithm (${_target})"
+arch=('x86_64')
+url='https://lz4.github.io/lz4/'
+msys2_repository_url="https://github.com/lz4/lz4"
+msys2_references=(
+  "cpe: cpe:/a:lz4_project:lz4"
+  "gentoo: app-arch/lz4"
+)
+license=('spdx:GPL-2.0-or-later')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'make')
+options=('!strip' 'staticlibs' '!libtool')
+source=(lz4-${pkgver}.tar.gz::"https://github.com/lz4/lz4/archive/v${pkgver}.tar.gz")
+sha256sums=('537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b')
+
+build() {
+  cd ${srcdir}/lz4-${pkgver}
+
+  # lz4 has no autotools build - the native recipe drives its own Makefiles,
+  # which take the toolchain through CC rather than --host, so there is no
+  # triplet to set.  The native recipe hardcodes CC=/usr/bin/gcc, which is the
+  # host compiler; that is the one line that has to change.
+  #
+  # -specs=${_SPECS} supplies -e _msys_dll_entry for shared links; the packaged
+  # cross gcc's stock specs name _cygwin_dll_entry, which nothing in this
+  # sysroot defines, so ld only warns and emits DLLs with AddressOfEntryPoint 0
+  # whose initialisation never runs.  The profile sets !buildflags, so the flags
+  # are passed here rather than inherited.  -O0 -g matches the rest of the chain.
+  local _cflags="-O0 -g -specs=${_SPECS}"
+  local _ldflags="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+
+  # TARGET_OS and the .exe suffix have to be stated explicitly.
+  #
+  # lz4's Makefile.inc derives both from `uname`, and `uname` on MSYS2 reports
+  # whichever subsystem the shell was started in - MINGW64_NT-... under a MinGW
+  # shell, MSYS_NT-... under an MSYS one - never the target.  It only reaches
+  # the "MSYS%" branch that names the library msys-lz4-1.dll when it happens to
+  # be the latter; otherwise it falls through to the generic branch and the DLL
+  # comes out as liblz4.dll, which no msys consumer looks for.  Setting
+  # TARGET_OS=MSYS pins the name and implies WINBASED=yes.
+  #
+  # EXT=.exe for the same class of reason: without it the binary is named plain
+  # "lz4" - a valid ARM64 PE, just without the suffix Windows needs - and
+  # installed under that name.  Same problem as cross-msysarm64-zstd's EXT=.exe.
+
+  # lib and programs, not the native recipe's "all".  The top-level "all" also
+  # builds "manuals", which compiles contrib/gen_manual in C++; that fails to
+  # link with "undefined reference to _Unwind_Resume", because the specs file
+  # this chain uses carries a plain "*libgcc: -lgcc" with no -lgcc_eh - the
+  # unwinder is a static-only archive here, and putting it in the global link
+  # makes libtool degrade every shared library to static-only.  gen_manual only
+  # regenerates the HTML manuals that lz4 already ships, so it is not needed.
+  #
+  # Consequence: doc/lz4_manual.html and lz4frame_manual.html are the versions
+  # from the release tarball rather than regenerated ones - identical content.
+  local _make=(
+    CC="${_target}-gcc"
+    AR="${_target}-ar"
+    CFLAGS="${_cflags}"
+    LDFLAGS="${_ldflags}"
+    TARGET_OS=MSYS
+    EXT=.exe
+  )
+  make -C lib      "${_make[@]}"
+  make -C programs "${_make[@]}"
+
+  [[ -f programs/lz4.exe ]] || { error "lz4.exe was not produced"; return 1; }
+}
+
+package() {
+  cd ${srcdir}/lz4-${pkgver}
+
+  local _make=(
+    DESTDIR="${pkgdir}"
+    PREFIX="${_sysroot}/usr"
+    CC="${_target}-gcc"
+    AR="${_target}-ar"
+    TARGET_OS=MSYS
+    EXT=.exe
+  )
+  make -C lib      install "${_make[@]}"
+  make -C programs install "${_make[@]}"
+
+  local _prefix="${pkgdir}${_sysroot}/usr"
+  [[ -f ${_prefix}/lib/liblz4.a ]] || { error "liblz4.a was not installed"; return 1; }
+  [[ -f ${_prefix}/bin/lz4.exe ]] || { error "lz4.exe was not installed"; return 1; }
+  [[ -f ${_prefix}/bin/msys-lz4-1.dll && -f ${_prefix}/lib/liblz4.dll.a ]] || {
+    error "no liblz4 DLL under the msys name was installed"; return 1
+  }
+}
