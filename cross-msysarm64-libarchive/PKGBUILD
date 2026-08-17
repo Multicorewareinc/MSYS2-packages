@@ -1,0 +1,151 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of libarchive, staged into the cross sysroot.
+# Sources are taken unchanged from the native libarchive/ recipe.  The configure
+# line is the tested standalone build script's, with the two differences noted
+# in build().
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=libarchive
+pkgname=cross-msysarm64-libarchive
+pkgver=3.8.9
+pkgrel=1
+pkgdesc="Multi-format archive and compression library (${_target})"
+arch=('x86_64')
+url="https://libarchive.org/"
+msys2_repository_url="https://github.com/libarchive/libarchive"
+msys2_references=(
+  "cpe: cpe:/a:libarchive:libarchive"
+)
+license=('spdx:BSD-2-Clause')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-bzip2' 'cross-msysarm64-libiconv' 'cross-msysarm64-expat'
+         'cross-msysarm64-xz' 'cross-msysarm64-lz4' 'cross-msysarm64-openssl'
+         'cross-msysarm64-zstd' 'cross-msysarm64-zlib'
+         'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip' 'staticlibs')
+source=("https://github.com/libarchive/libarchive/releases/download/v${pkgver}/${pkgbase}-${pkgver}.tar.xz"{,.asc})
+sha256sums=('888c934f9d95648ecb9163dc8e23ab80a476ecb81a8f1154704a227b5b676dde'
+            'SKIP')
+validpgpkeys=("659C84C0E23EA1FA97E0B58CC040B508D63D2B36") # Martin Matuska <mm@FreeBSD.org>
+
+prepare() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  autoreconf -fiv
+}
+
+build() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  # The standalone script's, and the native recipe's.  Without it libtool
+  # rejects this sysroot's libraries as unrecognised file format.
+  export lt_cv_deplibs_check_method='pass_all'
+  export MSYSTEM=CYGWIN
+
+  # Appended, never prepended - see cross-msysarm64-xz for why.
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # The configure options below are the standalone build script's, verbatim and
+  # in its order.  Two things differ:
+  #
+  # * The triplet.  The script passes --host=aarch64-pc-msys, which is why it
+  #   ends up copying "msys-archive-*.dll ... || true" - libtool's
+  #   shared-library rules key off host_os with the case list "cygwin* | mingw*
+  #   | windows* | pw32* | cegcc*", which does not match msys, so configure
+  #   reports "supports shared libraries... no" and no DLL is ever produced.
+  #   pacman needs a real libarchive, so the cygwin spelling is used here, as in
+  #   cross-msysarm64-xz and -expat.  Build and host are the same so configure
+  #   runs its AC_RUN_IFELSE probes rather than answering them with guesses.
+  #
+  # * --prefix.  The script installs into ${SYSROOT} directly, mixing its output
+  #   in with the toolchain's own files; everything in this chain installs under
+  #   ${_sysroot}/usr instead, which is where the packaged sysroot keeps
+  #   headers, libraries and pkgconfig data.
+  #
+  # -O0 -g and -specs=${_SPECS} are the script's flags.  The specs file supplies
+  # -e _msys_dll_entry for shared links; the packaged cross gcc's stock specs
+  # name _cygwin_dll_entry, which nothing in this sysroot defines, so ld only
+  # warns and emits DLLs with AddressOfEntryPoint 0 whose initialisation never
+  # runs.  The profile sets !buildflags, so the flags are passed here rather
+  # than inherited.
+  #
+  # The -I/-L pair is the script's too.  They are needed despite the prefix:
+  # ${_sysroot}/include is searched before ${_sysroot}/usr/include as a system
+  # directory, and gcc drops a -I naming a directory it already searches, so the
+  # real packages' headers have to be reachable some other way.
+  #
+  # --with-bz2lib, --with-lz4 and --with-expat are the script's, and are why
+  # cross-msysarm64-bzip2, -lz4 and -expat were packaged: when the script ran,
+  # none of the three was in the sysroot, so configure quietly disabled each one
+  # and the resulting libarchive could not read bzip2, lz4 or xar archives.
+  local _triplet="${_target%-msys}-cygwin"
+
+  ./configure \
+    --build=${_triplet} \
+    --host=${_triplet} \
+    --prefix=${_sysroot}/usr \
+    --enable-shared \
+    --enable-static \
+    --without-libiconv-prefix \
+    --without-xml2 \
+    --without-lzo2 \
+    --without-nettle \
+    --with-openssl \
+    --without-cng \
+    --with-zstd \
+    --with-lz4 \
+    --with-lzma \
+    --with-bz2lib \
+    --with-zlib \
+    --with-expat \
+    CFLAGS="-O0 -g -specs=${_SPECS}" \
+    CPPFLAGS="-I${_sysroot}/usr/include" \
+    LDFLAGS="-L${_sysroot}/usr/lib -specs=${_SPECS} -Wl,--disable-high-entropy-va"
+
+  make
+
+  # libtool silently degrading to static-only is the failure worth catching here
+  # rather than in pacman two packages later.
+  grep -q "^dlname='.\+'" libarchive.la 2>/dev/null || {
+    error "libarchive.la has no dlname - libtool produced a static-only build"
+    return 1
+  }
+
+  # Each of these is a compression backend the script asked for and that
+  # configure will quietly drop if it cannot find the library.  Checking the
+  # generated config.h is cheaper than discovering it when pacman cannot read a
+  # .pkg.tar.zst.
+  local _sym
+  for _sym in HAVE_ZLIB_H HAVE_LZMA_H HAVE_ZSTD_H HAVE_BZLIB_H HAVE_LZ4_H \
+              HAVE_LIBEXPAT HAVE_OPENSSL_EVP_H; do
+    grep -q "^#define ${_sym} 1" config.h || {
+      error "configure did not find ${_sym} - a requested backend was dropped"
+      return 1
+    }
+  done
+
+  make DESTDIR="${srcdir}/dest" install
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  install -D -m644 "${srcdir}/${pkgbase}-${pkgver}/COPYING" \
+    "${pkgdir}${_sysroot}/usr/share/licenses/${pkgname}/COPYING"
+
+  # iconv has no .pc file, as the native recipe notes.
+  sed -i "s| iconv||g" "${pkgdir}${_sysroot}/usr/lib/pkgconfig/libarchive.pc"
+
+  [[ -n $(ls "${pkgdir}${_sysroot}"/usr/bin/msys-archive-*.dll 2>/dev/null) ]] || {
+    error "no libarchive DLL was installed"; return 1
+  }
+  [[ -f ${pkgdir}${_sysroot}/usr/bin/bsdtar.exe ]] || {
+    error "bsdtar.exe was not installed"; return 1
+  }
+}
