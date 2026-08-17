@@ -1,0 +1,11 @@
+--- gpgme-1.24.0/autogen.sh.orig	2024-11-10 18:30:32.006547200 +0100
++++ gpgme-1.24.0/autogen.sh	2024-11-10 18:31:09.378811700 +0100
+@@ -271,7 +271,7 @@
+     else
+       ingit=no
+       beta=yes
+-      tmp="-unknown"
++      tmp=""
+       cid="0000000"
+       rev="0000000"
+       rvd="0"

@@ -1,0 +1,162 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of gpgme, staged into the cross sysroot.
+# Sources and the version patch are taken unchanged from the native gpgme/
+# recipe.  See build() for the differences from it and from the tested
+# standalone script.
+#
+# NOTE on fetching: gnupg.org answers 403 to curl from some networks, this one
+# included.  The source URL is left as the native recipe's; if makepkg cannot
+# download it, fetch the tarball and its .sig by hand into this directory from
+# a mirror, e.g.
+#     https://www.mirrorservice.org/sites/ftp.gnupg.org/gcrypt/gpgme/
+# The checksums below are the native recipe's and are what verify it.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=gpgme
+pkgname=cross-msysarm64-gpgme
+pkgver=2.0.1
+pkgrel=1
+pkgdesc="A C wrapper library for GnuPG (${_target})"
+arch=('x86_64')
+url="https://gnupg.org/related_software/gpgme/"
+msys2_repository_url='https://dev.gnupg.org/source/gpgme/'
+msys2_pgp_keys_url='https://gnupg.org/signature_key.html'
+license=('spdx:GPL-2.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later AND MIT')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-libassuan' 'cross-msysarm64-libgpg-error'
+         'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip' 'staticlibs')
+source=(https://gnupg.org/ftp/gcrypt/${pkgbase}/${pkgbase}-${pkgver}.tar.bz2{,.sig}
+        0001-fix-broken-version.patch)
+sha256sums=('821ab0695c842eab51752a81980c92b0410c7eadd04103f791d5d2a526784966'
+            'SKIP'
+            'ff9eec1d2c1803a3f1f77cb8073c7a328859e5b26e8b0327581357110038d4cd')
+validpgpkeys=('5B80C5754298F0CB55D8ED6ABCEF7E294B092E28'
+              '6DAA6E64A76D2840571B4902528897B826403ADA'
+              'AC8E115BF73E2D8D47FA9908E98E9B2D19C6C8BD')
+
+prepare() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  # The native recipe's patch, unchanged: otherwise it appends "unknown" to the
+  # version, which is not a valid python version.
+  patch -p1 -i "${srcdir}/0001-fix-broken-version.patch"
+
+  autoreconf -ivf
+}
+
+build() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  export lt_cv_deplibs_check_method='pass_all'
+  export MSYSTEM=CYGWIN
+
+  # Appended, never prepended - see cross-msysarm64-xz for why.
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # Native for the target rather than cross, with the cygwin spelling of the
+  # triplet: libtool's host_os case list
+  # "cygwin* | mingw* | windows* | pw32* | cegcc*" does not match msys, and
+  # without a match no DLL is produced.  Building native also lets configure run
+  # its AC_RUN_IFELSE probes instead of guessing them.
+  #
+  # --enable-languages= (empty) is the standalone script's, and is kept.  gpgme
+  # otherwise builds its C++, Qt and Python bindings when it finds the tools;
+  # none of those have cross-msysarm64 packages, and the C++ ones would not link
+  # anyway - the specs file this chain uses carries a plain "*libgcc: -lgcc"
+  # with no -lgcc_eh, so anything needing the unwinder fails with "undefined
+  # reference to _Unwind_Resume", as seen in cross-msysarm64-lz4.
+  #
+  # --with-libgpg-error-prefix and --with-libassuan-prefix are the script's too;
+  # they point the gpgrt-config/libassuan-config lookups at the sysroot rather
+  # than at the host's x86_64 copies, which are earlier in PATH.
+  #
+  # The three --disable-*-test options and --enable-fixed-path are the native
+  # recipe's.  The fixed path is a runtime path on the target, where the sysroot
+  # is the root, so it stays /usr/bin:/bin:... rather than being rewritten.
+  #
+  # -O0 -g and -specs=${_SPECS} are the script's flags; the specs file supplies
+  # -e _msys_dll_entry for shared links.  The profile sets !buildflags, so they
+  # are passed here rather than inherited.
+  #
+  # -lgcc_eh is added for src/debug.c, which keeps its frame depth in a __thread
+  # variable.  Without it the DLL fails to link:
+  #
+  #     debug.o: in function `_gpgme_debug_frame_begin':
+  #     debug.c:80: undefined reference to `__emutls_get_address'
+  #
+  # This is a toolchain defect, not a gpgme one.  aarch64-pc-msys gcc uses
+  # emulated TLS, and its __emutls_get_address is in libgcc_eh.a rather than
+  # libgcc.a, while the specs file carries a plain "*libgcc: -lgcc" - so no
+  # __thread variable can be linked on this target at all.  Two lines reproduce
+  # it with no gpgme involved:
+  #
+  #     __thread int x;
+  #     int main(void){ x = 1; return x; }
+  #
+  # and adding -lgcc_eh links it, shared and static.  The x86_64 msys gcc has no
+  # emutls in libgcc.a either, but does not need it: that target has native TLS.
+  # The fix belongs in cross-msysarm64-gcc, which should put emutls in libgcc.a.
+  #
+  # This is why the standalone script deletes the __thread keyword from
+  # src/debug.c instead.  That is not ported: it makes the debug frame depth a
+  # process-global shared by every thread rather than per-thread, corrupting the
+  # indentation of gpgme's debug output under concurrency, and it edits a source
+  # file to work around a missing library.  Linking the library is the smaller
+  # change.
+  #
+  # Note the makepkg profile warns against -lgcc_eh in the *global* LDFLAGS,
+  # because libtool sets droppeddeps=yes for a dependency with no shared version
+  # and silently degrades every library in the chain to static-only.  Here it is
+  # scoped to this one package, and the dlname assertion after make is what
+  # proves libtool did not do that.
+  local _triplet="${_target%-msys}-cygwin"
+
+  ./configure \
+    --build=${_triplet} \
+    --host=${_triplet} \
+    --prefix=${_sysroot}/usr \
+    --sysconfdir=${_sysroot}/etc \
+    --localstatedir=${_sysroot}/var \
+    --disable-gpgsm-test \
+    --disable-gpgconf-test \
+    --disable-g13-test \
+    --enable-shared \
+    --enable-static \
+    --enable-languages= \
+    --with-libgpg-error-prefix=${_sysroot}/usr \
+    --with-libassuan-prefix=${_sysroot}/usr \
+    --enable-fixed-path="/usr/bin:/bin:/usr/sbin:/usr/local/bin" \
+    CFLAGS="-O0 -g -specs=${_SPECS}" \
+    CXXFLAGS="-O0 -g -specs=${_SPECS}" \
+    LDFLAGS="-specs=${_SPECS} -Wl,--disable-high-entropy-va -lgcc_eh"
+
+  # no_undefined=-no-undefined is the native recipe's.
+  make no_undefined=-no-undefined
+
+  grep -q "^dlname='.\+'" src/libgpgme.la 2>/dev/null || {
+    error "libgpgme.la has no dlname - libtool produced a static-only build"
+    return 1
+  }
+
+  make DESTDIR=${srcdir}/dest install
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  install -D -m644 "${srcdir}/${pkgbase}-${pkgver}/COPYING.LESSER" \
+    "${pkgdir}${_sysroot}/usr/share/licenses/${pkgname}/COPYING.LESSER"
+
+  rm -f "${pkgdir}${_sysroot}/usr/share/info/dir"
+
+  [[ -n $(ls "${pkgdir}${_sysroot}"/usr/bin/msys-gpgme-*.dll 2>/dev/null) ]] || {
+    error "no libgpgme DLL was installed"; return 1
+  }
+}
