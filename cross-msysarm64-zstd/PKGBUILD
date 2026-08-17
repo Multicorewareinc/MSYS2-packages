@@ -1,0 +1,96 @@
+# Maintainer: Oleg Titov <oleg.titov@gmail.com>
+#
+# aarch64-pc-msys build of zstd, staged into the cross sysroot.
+# Sources are taken unchanged from the native zstd/ recipe.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=zstd
+pkgname=cross-msysarm64-zstd
+pkgver=1.5.7
+pkgrel=1
+pkgdesc="Zstandard - fast real-time compression algorithm (${_target})"
+arch=('x86_64')
+url='https://facebook.github.io/zstd/'
+msys2_repository_url="https://github.com/facebook/zstd"
+msys2_references=(
+  "anitya: 12083"
+  "cpe: cpe:2.3:a:facebook:zstandard"
+)
+license=('spdx:BSD-3-Clause OR GPL-2.0-only')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils')
+options=('!strip' 'staticlibs')
+source=("https://github.com/facebook/${pkgbase}/releases/download/v${pkgver}/${pkgbase}-${pkgver}.tar.gz"{,.sig})
+sha256sums=('eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3'
+            'SKIP')
+validpgpkeys=('4EF4AC63455FC9F4545D9B7DEF8FE99528B52FFD')
+noextract=("${pkgbase}-${pkgver}.tar.gz")
+
+prepare() {
+  tar -xzf "${pkgbase}-${pkgver}.tar.gz" 2> /dev/null || tar -xzf "${pkgbase}-${pkgver}.tar.gz"
+}
+
+build() {
+  # zstd's own Makefiles are used rather than the cmake build the native recipe
+  # drives.  This follows the tested standalone build script for this package:
+  # cmake would need a toolchain file to cross-compile, while lib/Makefile and
+  # programs/Makefile take CC/CFLAGS/LDFLAGS directly.
+  #
+  # -specs=${_SPECS} and -O0 -g are the script's flags.  The specs file supplies
+  # -e _msys_dll_entry for shared links, and the -g avoids the compiler
+  # segfaults seen elsewhere in this chain on the w32api header chain.
+  local _cflags="-O0 -g -specs=${_SPECS}"
+  local _ldflags="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+
+  # Static library only, as the script builds.  zstd's Makefile would also
+  # produce a DLL, but nothing in this chain needs one - libarchive and curl
+  # link zstd statically - and the script is what is known to work.
+  cd "${srcdir}/${pkgbase}-${pkgver}/lib"
+  make libzstd.a \
+    CC="${_target}-gcc" \
+    CXX="${_target}-g++" \
+    CFLAGS="${_cflags}" \
+    LDFLAGS="${_ldflags}"
+
+  # EXT=.exe has to be passed explicitly.  programs/Makefile only sets it when
+  # the OS environment variable matches Windows%, and makepkg's sanitised
+  # environment does not carry OS, so the binary would come out named plain
+  # "zstd" - a valid ARM64 PE, just without the suffix Windows needs, and
+  # "make install" would then install it under that name too.
+  #
+  # Deliberately not fixed by exporting OS=Windows_NT: that branch also picks a
+  # resource file, and its test is "x86_64% from $(CC) -dumpmachine", so an
+  # aarch64 compiler falls through to the *32-bit* windres resource.
+  cd "../programs"
+  make zstd EXT=.exe \
+    CC="${_target}-gcc" \
+    CXX="${_target}-g++" \
+    CFLAGS="${_cflags}" \
+    LDFLAGS="${_ldflags}"
+
+  [[ -f zstd.exe ]] || { error "zstd.exe was not produced"; return 1; }
+}
+
+package() {
+  local _prefix="${pkgdir}${_sysroot}/usr"
+
+  cd "${srcdir}/${pkgbase}-${pkgver}/lib"
+  make install-static install-includes install-pc \
+    PREFIX="${_sysroot}/usr" \
+    DESTDIR="${pkgdir}" \
+    CC="${_target}-gcc" \
+    CXX="${_target}-g++"
+
+  cd "../programs"
+  make install EXT=.exe \
+    PREFIX="${_sysroot}/usr" \
+    DESTDIR="${pkgdir}" \
+    CC="${_target}-gcc" \
+    CXX="${_target}-g++"
+
+  [[ -f ${_prefix}/lib/libzstd.a ]] || { error "libzstd.a was not installed"; return 1; }
+  [[ -f ${_prefix}/bin/zstd.exe ]] || { error "zstd.exe was not installed"; return 1; }
+}
