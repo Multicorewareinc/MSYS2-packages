@@ -11,6 +11,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 HOST_PKGS=(
   base-devel        # makepkg itself, plus the usual build utilities
   autotools         # autoconf/automake/libtool - most recipes autoreconf
+  gettext-devel     # autopoint's /usr/share/gettext/archive.dir.tar.xz.
+                    # NOT pulled in by autotools, which depends only on
+                    # gettext (the runtime).  Without it any recipe whose
+                    # prepare() runs autoreconf on a package using AM_GNU_GETTEXT
+                    # - coreutils is the first - dies in autopoint with
+                    # "infrastructure files for version 0.19.2 not found".
   gcc               # the *build* compiler, for helper programs
   patch
   git               # pacman's source is a git clone

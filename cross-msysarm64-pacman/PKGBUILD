@@ -201,6 +201,12 @@ prepare() {
 }
 
 build() {
+  # Fail fast if makepkg was run without --config crossarm64/makepkg-crossarm64.conf.
+  # Otherwise CC comes from /etc/makepkg.conf (=gcc) and the whole package builds as
+  # native x86_64 while still claiming --host=aarch64-pc-msys.  See guard.sh.
+  source "${startdir}/../crossarm64/guard.sh"
+  crossarm64_assert_env
+
   cd ${srcdir}/${pkgbase}
 
   # MSYSTEM=MSYS, not the CYGWIN this chain uses elsewhere.  meson here is the
@@ -326,6 +332,37 @@ EOF
 package() {
   cd ${srcdir}/${pkgbase}
   DESTDIR=${pkgdir} meson install -C build
+
+  # Relocate the bash completions into the sysroot.
+  #
+  # pacman's meson.build takes the completion directory from the *host's*
+  # bash-completion.pc, which gives an absolute path and ignores --prefix:
+  #
+  #     bashcompletion = dependency('bash-completion', required : false)
+  #     if bashcompletion.found()
+  #       BASHCOMPDIR = bashcompletion.get_variable(pkgconfig: 'completionsdir')
+  #     else
+  #       BASHCOMPDIR = join_paths(DATAROOTDIR, 'bash-completion/completions')
+  #
+  # so the files land in ${pkgdir}/usr/share/... instead of
+  # ${pkgdir}${_sysroot}/usr/share/..., and pacman -U then refuses the package:
+  # "/usr/share/bash-completion/completions/pacman exists in filesystem (owned
+  # by pacman)".  It collides with the *host's* pacman - had it installed, it
+  # would have replaced the host's own completions with the target's.
+  #
+  # There is no meson option for this, and it cannot be fixed by confining
+  # PKG_CONFIG_LIBDIR to the sysroot: pkgconf 2.5.1 finds bash-completion.pc
+  # regardless (verified - PKG_CONFIG_LIBDIR pointing only at the sysroot still
+  # resolves it, as does unsetting the variable entirely).  Moving the files
+  # after the fact is what actually works.
+  if [[ -d ${pkgdir}/usr/share/bash-completion ]]; then
+    install -dm755 "${pkgdir}${_sysroot}/usr/share"
+    cp -a "${pkgdir}/usr/share/bash-completion" \
+          "${pkgdir}${_sysroot}/usr/share/"
+    rm -rf "${pkgdir}/usr/share/bash-completion"
+    # Leave nothing outside the sysroot, including the now-empty parents.
+    rmdir -p --ignore-fail-on-non-empty "${pkgdir}/usr/share" 2>/dev/null || true
+  fi
 
   # The config files, as the native recipe installs them, but under the sysroot.
   install -dm755 ${pkgdir}${_sysroot}/etc

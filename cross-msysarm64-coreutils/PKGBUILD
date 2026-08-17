@@ -54,6 +54,12 @@ prepare() {
 }
 
 build() {
+  # Fail fast if makepkg was run without --config crossarm64/makepkg-crossarm64.conf.
+  # Otherwise CC comes from /etc/makepkg.conf (=gcc) and the whole package builds as
+  # native x86_64 while still claiming --host=aarch64-pc-msys.  See guard.sh.
+  source "${startdir}/../crossarm64/guard.sh"
+  crossarm64_assert_env
+
   [[ -d ${srcdir}/build-${_target} ]] && rm -rf ${srcdir}/build-${_target}
   mkdir -p ${srcdir}/build-${_target} && cd ${srcdir}/build-${_target}
 

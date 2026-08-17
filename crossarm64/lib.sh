@@ -107,6 +107,77 @@ fetch_gnupg_sources() {
   done
 }
 
+# Verify a finished package really contains AArch64 binaries.
+#
+# The per-recipe crossarm64_assert_env in guard.sh stops a native build before
+# it starts, which is the cheap check.  This is the backstop: it looks at what
+# was actually produced, so it covers every package with one implementation
+# rather than 23 hand-written output globs, and it catches any route to a
+# wrong-architecture artifact that the environment check does not model.
+#
+# It matters because a wrong-architecture package is otherwise completely
+# silent - it builds, packages, installs, and gets picked up by the next
+# package's configure without one error - and build_pkg installs each result
+# into the sysroot, so a single bad package quietly poisons everything after it.
+#
+# `file` reports "ARM64" for target PE images here and "x86-64" for native ones.
+assert_pkg_arch() {
+  local pkgfile="$1" tmp f out checked=0 bad=0
+  tmp=$(mktemp -d)
+  # Only the PE members; .a archives report as "current ar archive" either way,
+  # so they tell us nothing.
+  bsdtar -xf "$pkgfile" -C "$tmp" --include='*.dll' --include='*.exe' 2>/dev/null || true
+
+  while IFS= read -r f; do
+    checked=$((checked + 1))
+    out=$(file -b "$f" 2>/dev/null)
+    case $out in
+      *ARM64*|*Aarch64*|*aarch64*) ;;
+      *) warn "wrong architecture: ${f#$tmp/}: ${out}"; bad=1 ;;
+    esac
+  done < <(find "$tmp" \( -name '*.dll' -o -name '*.exe' \) -type f)
+
+  rm -rf "$tmp"
+
+  if [[ $bad -ne 0 ]]; then
+    die "$(basename "$pkgfile") contains non-${TARGET} binaries - refusing to install it.
+    This means the build did not use the cross toolchain.  Delete the package's
+    src/ tree and rebuild; a stale src/ caches native configure answers."
+  fi
+  if [[ $checked -eq 0 ]]; then
+    # Not fatal: a package can legitimately ship only headers or static libs.
+    warn "$(basename "$pkgfile") contains no .dll/.exe - architecture unverified"
+  else
+    msg "$(basename "$pkgfile"): ${checked} PE file(s), all ARM64"
+  fi
+}
+
+# Verify a package puts nothing outside the sysroot.
+#
+# These are host-side cross packages: every file they own belongs under
+# ${SYSROOT}.  A build system that takes a directory from a *host* .pc file
+# rather than from --prefix escapes that, and the result collides with the
+# host's own packages - cross-msysarm64-pacman shipped
+# /usr/share/bash-completion/completions/pacman, which pacman -U rejected as
+# "exists in filesystem (owned by pacman)".
+#
+# The rejection is the good case.  The dangerous one is an escaped path the
+# host does not already own: pacman would install it happily, and a cross
+# package would then be writing target files into the host root.
+assert_pkg_paths() {
+  local pkgfile="$1" stray
+  # .PKGINFO/.BUILDINFO/.MTREE are metadata, not payload.
+  stray=$(bsdtar -tf "$pkgfile" 2>/dev/null |
+            grep -v "^usr/${TARGET}/" |
+            grep -vE '^\.[A-Z]|^\./?$|/$')
+
+  if [[ -n $stray ]]; then
+    warn "$(basename "$pkgfile") installs files outside ${SYSROOT}:"
+    printf '    %s\n' $stray >&2
+    die "refusing to install - these would land in the host root"
+  fi
+}
+
 # Build one package and install it.  Everything is staged under ${SYSROOT}, so
 # installing as we go is what makes the next package's configure find it.
 build_pkg() {
@@ -137,6 +208,12 @@ build_pkg() {
   local pkgfile
   pkgfile=$(ls -t "${PKGDEST}/${name}"-*.pkg.tar.zst 2>/dev/null | head -1)
   [[ -n $pkgfile ]] || die "${name} built but no package appeared in ${PKGDEST}"
+
+  # Before installing, not after: build_pkg installs into the sysroot, so a bad
+  # package caught here is one that never gets a chance to mislead the next
+  # package's configure.
+  assert_pkg_arch "$pkgfile"
+  assert_pkg_paths "$pkgfile"
 
   pacman -U --noconfirm "$pkgfile" >> "$log" 2>&1 ||
     die "${name}: pacman -U failed - see ${log}"
