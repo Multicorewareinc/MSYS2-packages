@@ -1,0 +1,145 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of libassuan, staged into the cross sysroot.
+# Sources are taken unchanged from the native libassuan/ recipe, which builds
+# two versions: 3.0.2, and 2.5.7 for its DLL alone, because MSYS2 ships both
+# ABIs and packages built against the old one still need msys-assuan-0.dll.
+#
+# NOTE on fetching: gnupg.org answers 403 to curl from some networks, this one
+# included.  The source URLs are left as the native recipe's; if makepkg cannot
+# download them, fetch the tarballs and .sig files by hand into this directory
+# from a mirror, e.g.
+#     https://www.mirrorservice.org/sites/ftp.gnupg.org/gcrypt/libassuan/
+# The checksums below are the native recipe's and are what verify them.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=libassuan
+pkgname=cross-msysarm64-libassuan
+pkgver=3.0.2
+pkgrel=1
+pkgdesc="A IPC library used by some GnuPG related software (${_target})"
+arch=('x86_64')
+url="https://gnupg.org/related_software/libassuan"
+msys2_repository_url='https://git.gnupg.org/cgi-bin/gitweb.cgi?p=libassuan.git'
+msys2_pgp_keys_url='https://gnupg.org/signature_key.html'
+license=('spdx:LGPL-2.1-or-later')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-libgpg-error' 'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip' 'staticlibs' 'libtool')
+_oldver=2.5.7
+source=(https://gnupg.org/ftp/gcrypt/${pkgbase}/${pkgbase}-${_oldver}.tar.bz2{,.sig}
+        https://gnupg.org/ftp/gcrypt/${pkgbase}/${pkgbase}-${pkgver}.tar.bz2{,.sig})
+sha256sums=('0103081ffc27838a2e50479153ca105e873d3d65d8a9593282e9c94c7e6afb76'
+            'SKIP'
+            'd2931cdad266e633510f9970e1a2f346055e351bb19f9b78912475b8074c36f6'
+            'SKIP')
+validpgpkeys=('AC8E115BF73E2D8D47FA9908E98E9B2D19C6C8BD'  # Niibe Yutaka (GnuPG Release Key)
+              '6DAA6E64A76D2840571B4902528897B826403ADA') # Werner Koch (dist signing 2020)
+
+prepare() {
+  local _v
+  for _v in ${_oldver} ${pkgver}; do
+    cd "${srcdir}/${pkgbase}-${_v}"
+
+    # fun1_cookie_write is handed to funopen() as its write callback, but
+    # declares its size parameter "int" where the platform's funopen expects
+    # _READ_WRITE_BUFSIZE_TYPE.  cygwin/config.h defines that as size_t - on
+    # x86_64 msys exactly as on aarch64, so this is not a target difference:
+    #
+    #     note: expected 'int (*)(void *, const char *, size_t)'
+    #           but argument is of type 'int (*)(void *, const char *, int)'
+    #
+    # What changed is the compiler.  Passing an incompatible function pointer
+    # is a constraint violation that C23 makes an error rather than a warning,
+    # and both compilers here default to gnu23, so libassuan no longer builds
+    # as written.  The host gcc 15.2.0 rejects the identical code, and -std=gnu17
+    # does not help - GCC 15 diagnoses it as an error at every standard level.
+    #
+    # This is the standalone script's fix, applied to both trees.  size_t is the
+    # correct type: it makes the definition match the declaration libassuan is
+    # already passing it to.  The return type stays int, which funopen expects.
+    sed -i \
+      's/^fun1_cookie_write (void \*cookie, const char \*buffer, int orig_size)$/fun1_cookie_write (void *cookie, const char *buffer, size_t orig_size)/' \
+      src/assuan-handler.c
+    grep -q 'fun1_cookie_write (void \*cookie, const char \*buffer, size_t orig_size)' \
+      src/assuan-handler.c || {
+      echo "libassuan ${_v}: fun1_cookie_write fix did not apply - source has moved" >&2
+      return 1
+    }
+
+    autoreconf -fi
+  done
+}
+
+build() {
+  export lt_cv_deplibs_check_method='pass_all'
+  export MSYSTEM=CYGWIN
+
+  # Appended, never prepended - see cross-msysarm64-xz for why.
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # Native for the target rather than cross, so configure runs its
+  # AC_RUN_IFELSE probes instead of answering them with guesses.  The cygwin
+  # spelling is used because libtool's host_os case list
+  # "cygwin* | mingw* | windows* | pw32* | cegcc*" does not match msys, and
+  # without a match no DLL is produced - which is the whole point of building
+  # 2.5.7 here.
+  #
+  # -O0 -g and -specs=${_SPECS} are the standalone script's flags; the specs
+  # file supplies -e _msys_dll_entry for shared links.  The profile sets
+  # !buildflags, so they are passed here rather than inherited.
+  local _triplet="${_target%-msys}-cygwin"
+  local _cfg=(
+    --build=${_triplet}
+    --host=${_triplet}
+    --prefix=${_sysroot}/usr
+    --with-libgpg-error-prefix=${_sysroot}/usr
+    CFLAGS="-O0 -g -specs=${_SPECS}"
+    CXXFLAGS="-O0 -g -specs=${_SPECS}"
+    LDFLAGS="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+  )
+
+  # 2.5.7 first, shared only - the native recipe keeps just its DLL.
+  cd "${srcdir}/${pkgbase}-${_oldver}"
+  ./configure "${_cfg[@]}" --enable-shared
+  make no_undefined="-no-undefined"
+  grep -q "^dlname='.\+'" src/libassuan.la 2>/dev/null || {
+    error "libassuan ${_oldver}.la has no dlname - libtool produced a static-only build"
+    return 1
+  }
+  make DESTDIR="${srcdir}/dest_old" install
+
+  # Then 3.0.2, the version everything is actually built against.
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+  ./configure "${_cfg[@]}" --enable-shared --enable-static
+  make no_undefined="-no-undefined"
+  grep -q "^dlname='.\+'" src/libassuan.la 2>/dev/null || {
+    error "libassuan ${pkgver}.la has no dlname - libtool produced a static-only build"
+    return 1
+  }
+  make DESTDIR="${srcdir}/dest" install
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  # From the old tree, only the DLL - headers, import library and
+  # libassuan-config all come from 3.0.2, as in the native recipe.
+  cp -f "${srcdir}/dest_old${_sysroot}"/usr/bin/*.dll "${pkgdir}${_sysroot}/usr/bin/"
+
+  install -D -m644 "${srcdir}/${pkgbase}-${pkgver}/COPYING" \
+    "${pkgdir}${_sysroot}/usr/share/licenses/${pkgname}/COPYING"
+
+  rm -f "${pkgdir}${_sysroot}/usr/share/info/dir"
+
+  local _n
+  _n=$(ls "${pkgdir}${_sysroot}"/usr/bin/msys-assuan-*.dll 2>/dev/null | wc -l)
+  [[ ${_n} -ge 2 ]] || {
+    error "expected both libassuan DLLs, found ${_n}"; return 1
+  }
+}
