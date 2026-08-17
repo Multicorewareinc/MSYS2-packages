@@ -1,0 +1,106 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of bzip2, staged into the cross sysroot.
+# Sources and both patches are taken unchanged from the native bzip2/ recipe;
+# only the configure triplets and the install prefix differ.
+#
+# This package exists for libarchive, whose tested standalone build script
+# configures with --with-bz2lib.  No bz2 was present in the sysroot when that
+# script ran, so libarchive silently built without bzip2 support; packaging it
+# makes the script's own configure line mean what it says.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=bzip2
+pkgname=cross-msysarm64-bzip2
+pkgver=1.0.8
+pkgrel=4
+pkgdesc="A high-quality data compression program (${_target})"
+arch=('x86_64')
+license=('spdx:bzip2-1.0.6')
+url="http://www.bzip.org"
+msys2_repository_url='https://sourceware.org/git/bzip2.git'
+msys2_references=(
+  "cpe: cpe:/a:bzip:bzip2"
+)
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'patch' 'autotools')
+options=('!strip' 'staticlibs')
+source=(https://sourceware.org/pub/bzip2/bzip2-${pkgver}.tar.gz
+        bzip2-1.0.6-msys-dll.patch
+        bzip2-1.0.6-msys2.patch)
+sha256sums=('ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269'
+            'a14e3ef3108fe843f5bd4bdf0943cc22c0a1581c382706dbd3f42ad7dc097c88'
+            'b499532b538ae1faa9b07933013671fd8f34431bfaa802f9099a96a6a4135e80')
+
+prepare() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  # Both patches are the native recipe's, unchanged.  bzip2 upstream ships only
+  # a hand-written Makefile; 0006-msys2 is what adds the autotools build these
+  # recipes configure, and msys-dll is what makes it produce a DLL.
+  patch -p1 -i ${srcdir}/bzip2-1.0.6-msys-dll.patch
+  patch -p1 -i ${srcdir}/bzip2-1.0.6-msys2.patch
+}
+
+build() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  export lt_cv_deplibs_check_method='pass_all'
+  export MSYSTEM=CYGWIN
+
+  # Appended, never prepended - see cross-msysarm64-xz for why.
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # Native for the target rather than cross, so configure runs its AC_RUN_IFELSE
+  # probes instead of answering them with guesses.  The cygwin spelling is used
+  # for consistency with the rest of this chain; unlike xz or expat it does not
+  # matter for the DLL here, because bzip2-1.0.6-msys-dll.patch does not go
+  # through libtool - it links msys-bz2-1.dll by hand from a generated .def.
+  #
+  # -specs=${_SPECS} supplies -e _msys_dll_entry for shared links.  The profile
+  # sets !buildflags, so the flags are passed here rather than inherited.
+  # -D_FILE_OFFSET_BITS=64 is the native recipe's, kept.
+  local _triplet="${_target%-msys}-cygwin"
+
+  ./configure \
+    --build=${_triplet} \
+    --host=${_triplet} \
+    --prefix=${_sysroot}/usr \
+    --enable-shared \
+    CFLAGS="-O0 -g -D_FILE_OFFSET_BITS=64 -specs=${_SPECS}" \
+    LDFLAGS="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+
+  make all
+
+  # There is no .la to inspect here, so check the DLL and its import library
+  # directly - a silent fallback to static-only would otherwise surface much
+  # later as undefined __imp_BZ2_* symbols in libarchive.
+  [[ -f msys-bz2-1.dll && -f libbz2.dll.a ]] || {
+    error "bzip2 did not produce a DLL and import library"
+    return 1
+  }
+
+  # PREFIX, not DESTDIR.  bzip2 upstream ships a hand-written Makefile whose
+  # install rules are literal "cp -f bzip2 $(PREFIX)/bin/bzip2" lines, and
+  # bzip2-1.0.6-msys2.patch keeps them; there is no DESTDIR anywhere in it, so
+  # passing one installs straight into the live sysroot.  The native recipe
+  # passes PREFIX="${srcdir}/dest" for the same reason - here it has to carry
+  # the sysroot path too, since package() copies the tree from underneath it.
+  make PREFIX="${srcdir}/dest${_sysroot}/usr" install
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  install -Dm644 "${srcdir}/${pkgbase}-${pkgver}/LICENSE" \
+    "${pkgdir}${_sysroot}/usr/share/licenses/${pkgname}/LICENSE"
+
+  [[ -n $(ls "${pkgdir}${_sysroot}"/usr/bin/msys-bz2-*.dll 2>/dev/null) ]] || {
+    error "no libbz2 DLL was installed"; return 1
+  }
+}
