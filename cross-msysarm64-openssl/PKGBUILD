@@ -1,0 +1,186 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of OpenSSL, staged into the cross sysroot.
+# Sources and all three patches are taken unchanged from the native openssl/
+# recipe.  The aarch64 additions follow the tested standalone build script.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=openssl
+pkgname=cross-msysarm64-openssl
+pkgver=3.6.3
+pkgrel=1
+pkgdesc='The Open Source toolkit for SSL/TLS (aarch64-pc-msys)'
+arch=('x86_64')
+url='https://openssl-library.org'
+msys2_repository_url="https://github.com/openssl/openssl"
+msys2_references=(
+  "cpe: cpe:/a:openssl:openssl"
+)
+license=('spdx:Apache-2.0')
+groups=('cross-msysarm64')
+depends=('cross-msysarm64-zlib' 'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'perl')
+options=('!strip' 'staticlibs')
+source=("https://github.com/openssl/openssl/releases/download/${pkgbase}-${pkgver}/${pkgbase}-${pkgver}.tar.gz"{,.asc}
+        '0001-Use-usr-ssl-as-ca-dir-instead-of-.-demoCA.patch'
+        '0002-Support-MSYS2.patch'
+        '0004-Override-engines-directory.patch')
+sha256sums=('243a86649cf6f23eeb6a2ff2456e09e5d77dd9018a54d3d96b0c6bdd6ba6c7f1'
+            'SKIP'
+            '7ff3213d8d085238695f076d254f16d15b16a9baca1f9393c1bed0057006da2c'
+            'b73a45cf26830bbb3c110a8f9e042ea5c71a9627204d5d172b04c43aff5b0f1a'
+            '345350546bf55dd069133e0c56b2c5f7e037db237a30f7ad38159bd61b6d4daf')
+validpgpkeys=('BA5473A2B0587B07FB27CF2D216094DFD0CB81EF')
+
+prepare() {
+  [[ -d ${srcdir}/${pkgbase}-${pkgver} ]] || tar -xzf ${srcdir}/${pkgbase}-${pkgver}.tar.gz -C ${srcdir}
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  # The native recipe's patches, unchanged.
+  patch -p1 -i ${srcdir}/0001-Use-usr-ssl-as-ca-dir-instead-of-.-demoCA.patch
+  patch -p1 -i ${srcdir}/0002-Support-MSYS2.patch
+  patch -p1 -i ${srcdir}/0004-Override-engines-directory.patch
+
+  # ---- aarch64 additions, ported from the standalone build script ----------
+  #
+  # 1. A Cygwin-aarch64 build target.  OpenSSL does not use autotools; its
+  #    Configure picks a target from Configurations/, and there is no aarch64
+  #    entry for the Cygwin family.  Insert one that inherits Cygwin-common and
+  #    names the cross compiler.  The specs file is what supplies
+  #    -e _msys_dll_entry for the shared libraries.
+  #
+  #    CFLAGS are the script's "-O0 -Wall" verbatim, and the absence of -g is
+  #    deliberate: with it the compiler segfaults on openssl's own evp.h while
+  #    building providers/implementations/exchange/dh_exch.c.  Bisected on the
+  #    exact failing command - -O0 -g, -O2 -g and -O1 -g all ICE, -g0 compiles.
+  #    Note this is the opposite of cross-msysarm64-xz, which needs -g to avoid
+  #    a crash; the flags here are package-specific and not interchangeable.
+  if ! grep -q '"Cygwin-aarch64"' Configurations/10-main.conf; then
+    awk -v specs="${_SPECS}" '/"Cygwin-x86_64" => \{/ {
+        print
+        print "    },"
+        print "    \"Cygwin-aarch64\" => {"
+        print "        inherit_from     => [ \"Cygwin-common\" ],"
+        print "        CC               => \"aarch64-pc-msys-gcc -specs=" specs "\","
+        print "        CXX              => \"aarch64-pc-msys-g++ -specs=" specs "\","
+        print "        CFLAGS           => \"-O0 -Wall\","
+        print "        LDFLAGS          => \"-specs=" specs " -Wl,--disable-high-entropy-va\","
+        next
+    }1' Configurations/10-main.conf > 10-main.conf.new
+    mv 10-main.conf.new Configurations/10-main.conf
+    grep -q '"Cygwin-aarch64"' Configurations/10-main.conf ||
+      { echo "failed to add the Cygwin-aarch64 target" >&2; return 1; }
+  fi
+
+  # 2. crypto/dllmain.c includes <windows.h> purely to pick up the
+  #    DLL_PROCESS_ATTACH family, and says in its own comment that doing so
+  #    "has side-effect of _WIN32 getting defined, which otherwise is mutually
+  #    exclusive with __CYGWIN__".  On this target that include also drags in
+  #    the w32api header chain this compiler crashes on.  Replace it with the
+  #    four constants and the handful of types actually used, as the standalone
+  #    script does.
+  #
+  #    The script's pattern expected "#  include <windows.h>"; 3.6.3 writes it
+  #    with a single space, so the spacing is matched loosely here.
+  if grep -qE '^# *include <windows.h>' crypto/dllmain.c; then
+    perl -0777 -pi -e 's{/\* pick DLL_\[PROCESS\|THREAD\]_\[ATTACH\|DETACH\] definitions \*/\n# *include <windows\.h>\n/\*\n \* this has side-effect of _WIN32 getting defined, which otherwise is\n \* mutually exclusive with __CYGWIN__\.\.\.\n \*/}{#define DLL_PROCESS_ATTACH 1\n#define DLL_THREAD_ATTACH  2\n#define DLL_THREAD_DETACH  3\n#define DLL_PROCESS_DETACH 0\ntypedef void* HINSTANCE;\ntypedef unsigned long DWORD;\ntypedef void* LPVOID;\ntypedef int BOOL;\n#define WINAPI __attribute__((stdcall))\n#define TRUE 1}s' crypto/dllmain.c
+    grep -q 'DLL_PROCESS_ATTACH 1' crypto/dllmain.c ||
+      { echo "dllmain.c windows.h replacement did not apply - source has moved" >&2; return 1; }
+  fi
+
+  # Two further fixes the standalone script carries are deliberately NOT ported:
+  # it comments <io.h>/<fcntl.h> out of include/internal/e_os.h and adds them
+  # back under __CYGWIN__ in crypto/bio/bss_file.c.  In 3.6.3 those includes are
+  # already guarded by "#ifdef OPENSSL_SYS_WIN32_CYGWIN", so the edits are
+  # obsolete - the script targets 3.2.1, where they were unconditional.
+}
+
+build() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  export MSYSTEM=CYGWIN
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # libcrypt32.a: OpenSSL links against crypt32 for the Windows certificate
+  # store, and the aarch64 w32api does not provide an import library for it.
+  # The standalone script generates one with dlltool from a minimal .def; do the
+  # same here rather than relying on the copy it left in the sysroot, which is
+  # owned by no package and would not exist on a clean machine.
+  cat > crypt32.def <<'EOF'
+LIBRARY crypt32.dll
+EXPORTS
+CertFreeCertificateContext
+CertDuplicateCertificateContext
+CertEnumCertificatesInStore
+CertFindCertificateInStore
+CertOpenSystemStoreW
+CertCloseStore
+EOF
+  ${_target}-dlltool -d crypt32.def -l "${srcdir}/libcrypt32.a"
+
+  # no-asm because there is no aarch64 assembly path for the Cygwin family.
+  #
+  # no-winstore works around a compiler crash.  Building
+  # providers/implementations/storemgmt/winstore_store.c - the Windows
+  # certificate-store provider - segfaults the compiler in
+  #     /usr/aarch64-pc-msys/include/wingdi.h:1775
+  # reached through windows.h, the same w32api header chain that breaks sed,
+  # coreutils and xz.  Unlike those, no flag combination gets through: -g,
+  # -O2, -O0 -g and the default all ICE, so the file cannot be compiled at all
+  # with this toolchain.  no-winstore is openssl's own supported switch for it
+  # and providers/implementations/storemgmt/build.info gates the file on
+  # exactly that.
+  #
+  # Consequence: this openssl cannot read certificates from the Windows
+  # certificate store via the "org.openssl.winstore" scheme.  File-based CA
+  # bundles are unaffected, which is what curl, git and pacman use here.
+  #
+  # RANLIB=true as the script passes: the build otherwise runs the host ranlib
+  # over aarch64 archives.
+  # No --cross-compile-prefix here, even though the standalone script passes it.
+  # OpenSSL prepends CROSS_COMPILE to the tool names taken from the target, and
+  # the Cygwin-aarch64 target added in prepare() already names the compiler in
+  # full, so passing both produces
+  #     aarch64-pc-msys-aarch64-pc-msys-gcc: command not found
+  ./Configure \
+    --prefix=${_sysroot}/usr \
+    --openssldir=${_sysroot}/usr/ssl \
+    --libdir=lib \
+    -L"${srcdir}" \
+    shared \
+    no-asm \
+    no-winstore \
+    Cygwin-aarch64
+
+  make build_libs RANLIB=true
+  make build_programs RANLIB=true
+
+  # A silent fallback to static-only would surface much later as undefined
+  # __imp_* symbols in curl or git, so check here.
+  [[ -f libcrypto.dll.a && -f libssl.dll.a ]] || {
+    error "openssl did not produce import libraries - shared build failed"
+    return 1
+  }
+}
+
+package() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+  make install_sw DESTDIR="${pkgdir}" RANLIB=true
+
+  install -Dm644 "${srcdir}/libcrypt32.a" "${pkgdir}${_sysroot}/usr/lib/libcrypt32.a"
+
+  # The DLLs come out as msys-crypto-3.dll / msys-ssl-3.dll, not the cygcrypto-3
+  # the standalone script copies around: MSYS2's 0002-Support-MSYS2.patch
+  # rewrites Configurations/platform/Cygwin.pm, which is what sets the shared
+  # library prefix.  The script builds 3.2.1 without that patch and so gets
+  # cyg*.  msys-* is the correct name for this distribution.
+  local _dll
+  _dll=$(ls "${pkgdir}${_sysroot}"/usr/bin/msys-crypto-*.dll 2>/dev/null | head -1)
+  [[ -n ${_dll} ]] || { error "no libcrypto DLL was installed"; return 1; }
+  [[ -f ${pkgdir}${_sysroot}/usr/lib/libcrypto.dll.a ]] || {
+    error "no libcrypto import library was installed"; return 1
+  }
+}
