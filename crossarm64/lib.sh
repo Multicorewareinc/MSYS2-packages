@@ -167,9 +167,13 @@ assert_pkg_arch() {
 assert_pkg_paths() {
   local pkgfile="$1" stray
   # .PKGINFO/.BUILDINFO/.MTREE are metadata, not payload.
+  # The trailing "|| true" is load-bearing.  grep exits 1 when it matches
+  # nothing, which is exactly the case where the package is CLEAN, and this file
+  # runs under set -euo pipefail - so without it a good package aborts the whole
+  # run, silently, at the assignment.
   stray=$(bsdtar -tf "$pkgfile" 2>/dev/null |
             grep -v "^usr/${TARGET}/" |
-            grep -vE '^\.[A-Z]|^\./?$|/$')
+            grep -vE '^\.[A-Z]|^\./?$|/$' || true)
 
   if [[ -n $stray ]]; then
     warn "$(basename "$pkgfile") installs files outside ${SYSROOT}:"
