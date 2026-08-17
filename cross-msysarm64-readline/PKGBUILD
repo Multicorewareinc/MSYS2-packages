@@ -105,8 +105,9 @@ build() {
   make DESTDIR=${srcdir}/dest install
 
   # The shared pass silently falling back to static-only is the failure mode
-  # worth catching here rather than three packages later.
-  [[ -n $(ls ${srcdir}/dest${_sysroot}/usr/bin/*.dll 2>/dev/null) ]] || {
+  # worth catching here rather than three packages later.  Look anywhere under
+  # dest: readline's shlib-install puts the DLL in libdir, not bindir.
+  [[ -n $(find ${srcdir}/dest -name '*.dll' -print -quit) ]] || {
     error "readline produced no DLL - the shared pass fell back to static"
     return 1
   }
@@ -116,16 +117,27 @@ package() {
   mkdir -p "${pkgdir}${_sysroot}"
   cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
 
-  # readline's DLL is msys-readline8.dll, so its import library is named
-  # msys-readline8.dll.a.  A plain -lreadline only looks for libreadline.dll.a,
-  # which is how the earlier hand build ended up with undefined __imp_rl_*
-  # symbols in bash.  Provide the conventional name alongside.
   cd "${pkgdir}${_sysroot}/usr/lib"
+
+  # readline's shlib-install leaves the DLLs in libdir.  On MSYS2 a DLL is an
+  # executable and belongs in bindir - that is where the native libreadline
+  # package puts msys-readline8.dll and msys-history8.dll, and where the
+  # loader looks at run time.
+  mkdir -p "${pkgdir}${_sysroot}/usr/bin"
+  mv -f ./*.dll "${pkgdir}${_sysroot}/usr/bin/"
+
+  # "make install" installs no import libraries at all, so install the ones the
+  # shared pass built.  bash itself is linked with --enable-static-link and so
+  # needs only libreadline.a, but without these nothing else can ever link
+  # against the DLLs.
   local a
   for a in readline history; do
-    if [[ -f msys-${a}8.dll.a && ! -f lib${a}.dll.a ]]; then
-      cp -f msys-${a}8.dll.a lib${a}.dll.a
-    fi
+    [[ -f ${srcdir}/build-shared/shlib/msys-${a}8.dll.a ]] || continue
+    install -m644 "${srcdir}/build-shared/shlib/msys-${a}8.dll.a" .
+    # The import library matches the DLL name, so a plain -l${a} - which looks
+    # for lib${a}.dll.a - would miss it.  That is exactly how the earlier hand
+    # build ended up with undefined __imp_rl_* symbols in bash.
+    cp -f "msys-${a}8.dll.a" "lib${a}.dll.a"
   done
 
   install -Dm644 "${srcdir}/inputrc" "${pkgdir}${_sysroot}/etc/inputrc"
