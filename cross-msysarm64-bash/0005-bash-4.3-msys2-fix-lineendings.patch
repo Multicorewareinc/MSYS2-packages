@@ -1,0 +1,56 @@
+diff --git a/lib/readline/display.c b/lib/readline/display.c
+index c1135ec..b388af6 100644
+--- a/lib/readline/display.c
++++ b/lib/readline/display.c
+@@ -529,7 +529,10 @@ expand_prompt (char *pmt, int flags, int *lp, int *lip, int *niflp, int *vlp)
+   if (lp)
+     *lp = rl;
+   if (lip)
+-    *lip = last;
++    /* Hack: faking that the last character is invisible seems to work around
++       prompt display bugs.  I wish I knew what the real bug was...  */
++    *lip = r - ret;
++/*     *lip = last; */
+   if (niflp)
+     *niflp = invfl;
+   if  (vlp)
+diff --git a/variables.c b/variables.c
+index 028667c..a10594d 100644
+--- a/variables.c
++++ b/variables.c
+@@ -2593,6 +2593,20 @@ set_if_not (name, value)
+ {
+   SHELL_VAR *v;
+ 
++#if defined (__MSYS__)
++  /* Remove trailing \r from value */
++  {
++    char *tpos;
++    if (value && *value)
++    {
++      tpos = strchr (value, '\0');
++      tpos--;
++      if (*tpos == '\r')
++	*tpos = '\0';
++    }
++  }
++#endif
++
+   if (shell_variables == 0)
+     create_variable_tables ();
+ 
+diff --git a/y.tab.c b/y.tab.c
+index 32b4c7c..ac70820 100644
+--- a/y.tab.c
++++ b/y.tab.c
+@@ -4746,6 +4752,10 @@ shell_getc (remove_quoted_newline)
+ 	  else
+ 	    RESIZE_MALLOCED_BUFFER (shell_input_line, i, 2, shell_input_line_size, 256);
+ 
++#ifdef __MSYS__
++	  if (c == '\r')
++	    continue;
++#endif
+ 	  if (c == EOF)
+ 	    {
+ 	      if (bash_input.type == st_stream)

@@ -1,0 +1,11 @@
+--- bash-5.2/support/shobj-conf.orig	2021-12-03 16:54:46.000000000 +0100
++++ bash-5.2/support/shobj-conf	2025-02-03 11:44:17.045563800 +0100
+@@ -479,7 +479,7 @@
+ cygwin*)
+ 	SHOBJ_LD='$(CC)'
+ 	SHOBJ_LDFLAGS='-shared -Wl,--enable-auto-import -Wl,--enable-auto-image-base -Wl,--export-all -Wl,--out-implib=$(@).a'
+-	SHLIB_LIBPREF='cyg'
++	SHLIB_LIBPREF='msys-'
+ 	SHLIB_LIBSUFF='dll'
+ 	SHLIB_LIBVERSION='$(SHLIB_DLLVERSION).$(SHLIB_LIBSUFF)'
+ 	SHLIB_LIBS='$(TERMCAP_LIB)'
