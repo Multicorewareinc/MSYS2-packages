@@ -1,0 +1,130 @@
+# Maintainer: Alexey Pavlov <Alexpux@gmail.com>
+#
+# aarch64-pc-msys build of xz/liblzma, staged into the cross sysroot.
+# Sources are taken unchanged from the native xz/ recipe; only the configure
+# triplets and the install prefix differ.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=xz
+pkgname=cross-msysarm64-xz
+pkgver=5.8.3
+pkgrel=1
+pkgdesc="Library and command line tools for XZ and LZMA compressed files (${_target})"
+arch=('x86_64')
+groups=('cross-msysarm64')
+license=('spdx:GPL-2.0-or-later AND LGPL-2.1-or-later AND 0BSD')
+url="https://tukaani.org/xz/"
+msys2_repository_url="https://github.com/tukaani-project/xz"
+msys2_references=(
+  "cpe: cpe:/a:tukaani:xz"
+)
+depends=('cross-msysarm64-libiconv' 'cross-msysarm64-gettext'
+         'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip' 'staticlibs')
+source=("https://github.com/tukaani-project/xz/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('8ec1767fa517642ecb4cf08b891ce667ba6f143551e382b07c7ef437bda335e2')
+
+prepare() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  # --no-po4a: po4a is not installed here, and autogen.sh exits non-zero when
+  # it cannot generate the translated man pages.  xz documents this exact flag
+  # for the case ("Pass --no-po4a to this script to skip this step.  It can be
+  # useful when you know that po4a isn't available"), so this is its own opt-out
+  # rather than a workaround.  The native recipe has po4a in makedepends.
+  #
+  # Consequence: no translated man pages.  The English ones are unaffected.
+  ./autogen.sh --no-po4a
+}
+
+build() {
+  cd ${srcdir}/${pkgbase}-${pkgver}
+
+  export lt_cv_deplibs_check_method='pass_all'
+  export MSYSTEM=CYGWIN
+
+  # The sysroot bin directories are APPENDED, never prepended: they are on PATH
+  # only so binaries compiled during configure can load msys-2.0.dll, and PATH
+  # order does not affect that.  Prepending shadows the host's tools with target
+  # ones and breaks config.status.
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # Triplet, flags and lt_cv_deplibs_check_method all follow the tested
+  # standalone build script for this package: --host=aarch64-pc-msys with
+  # lt_cv_deplibs_check_method='pass_all' exported above, which is what stops
+  # libtool rejecting the target's libraries as unrecognised.
+  #
+  # -specs=${_SPECS} is the important flag.  It supplies -e _msys_dll_entry for
+  # shared links; the packaged cross gcc's stock specs name _cygwin_dll_entry,
+  # which nothing in this sysroot defines, so ld only warns and emits DLLs with
+  # AddressOfEntryPoint 0 whose initialisation never runs.  ${_SPECS} is defined
+  # by the makepkg profile and points at the copy vendored in crossarm64/.
+  # The profile sets !buildflags, so CFLAGS/LDFLAGS have to be passed here
+  # rather than inherited.
+  #
+  # --disable-nls matches the script.  --disable-doxygen because doxygen is not
+  # installed here and only builds documentation; the native recipe enables it
+  # because its build host has it.
+  #
+  # Native for the target rather than cross, so configure runs its
+  # AC_RUN_IFELSE probes instead of answering them with guesses.
+  # CFLAGS are the standalone script's, verbatim, and the -g is load-bearing.
+  # Without it the compiler segfaults parsing the w32api header chain reached
+  # from windows.h:
+  #     rpcndr.h:203:1: internal compiler error: Segmentation fault
+  # while compiling src/common/tuklib_physmem.c.  Bisected on the exact failing
+  # command: -O2, -O1, -O2 -fno-var-tracking and -fno-toplevel-reorder all ICE,
+  # while -O0 -g and -O2 -g compile cleanly.  Note this is the opposite of
+  # cross-msysarm64-coreutils, where -g *causes* an ICE - consistent with a
+  # memory-corruption bug in the compiler whose symptoms move with allocation
+  # patterns rather than with any particular pass.
+  #
+  # The triplet says cygwin only because libtool's shared-library rules key off
+  # host_os with the case list "cygwin* | mingw* | windows* | pw32* | cegcc*",
+  # which does not match msys.  Built as aarch64-pc-msys - which is what the
+  # standalone script uses, since it does not need a DLL - configure reports
+  # "checking if libtool supports shared libraries... no" and silently emits a
+  # static-only liblzma.a with dlname='' and no DLL at all.  Everything else
+  # here follows the script.
+  local _triplet="${_target%-msys}-cygwin"
+
+  ./configure \
+    --build=${_triplet} \
+    --host=${_triplet} \
+    --prefix=${_sysroot}/usr \
+    --enable-shared \
+    --enable-static \
+    --disable-doxygen \
+    --disable-nls \
+    CFLAGS="-O0 -g -specs=${_SPECS}" \
+    LDFLAGS="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+
+  make
+
+  # libtool silently degrading to static-only is the failure worth catching
+  # here rather than in a consumer three packages later.
+  grep -q "^dlname='.\+'" src/liblzma/liblzma.la 2>/dev/null || {
+    error "liblzma.la has no dlname - libtool produced a static-only build"
+    return 1
+  }
+
+  make DESTDIR="${srcdir}/dest" install
+}
+
+package() {
+  mkdir -p "${pkgdir}${_sysroot}"
+  cp -rf "${srcdir}/dest${_sysroot}/"* "${pkgdir}${_sysroot}/"
+
+  # share/info/dir is the info index, rebuilt by install-info at install time
+  # and owned by no package; shipping it collides with every other package that
+  # installs info pages.
+  rm -f "${pkgdir}${_sysroot}/usr/share/info/dir"
+
+  [[ -n $(ls "${pkgdir}${_sysroot}"/usr/bin/msys-lzma-*.dll 2>/dev/null) ]] || {
+    error "no liblzma DLL was installed"; return 1
+  }
+}
