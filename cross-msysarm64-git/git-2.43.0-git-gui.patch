@@ -1,0 +1,53 @@
+--- git-2.55.0/git-gui/git-gui.sh.orig	2026-06-29 16:58:39.000000000 +0200
++++ git-2.55.0/git-gui/git-gui.sh	2026-06-29 20:43:50.308169400 +0200
+@@ -93,6 +93,11 @@
+ 	}
+ }
+ 
++proc is_CygwinGit {} {
++	# Cygwin git running with Windows Tcl/Tk
++	return 1
++}
++
+ ######################################################################
+ ##
+ ## PATH lookup. Sanitize $PATH, assure exec/open use only that
+@@ -264,7 +269,11 @@
+ if { [info exists ::env(GIT_GUI_LIB_DIR) ] } {
+ 	set oguilib $::env(GIT_GUI_LIB_DIR)
+ } else {
+-	set oguilib {@@GITGUI_LIBDIR@@}
++	if {[is_Windows] && [is_CygwinGit]} {
++		set oguilib [exec cygpath --windows --absolute {@@GITGUI_LIBDIR@@}]
++	} else {
++		set oguilib {@@GITGUI_LIBDIR@@}
++	}
+ }
+ set oguirel {@@GITGUI_RELATIVE@@}
+ if {$oguirel eq {1}} {
+@@ -1213,7 +1222,11 @@
+ 
+ # find worktree, continue without if not required
+ if {[catch {
+-		set _gitworktree [git rev-parse --show-toplevel]
++		if {[is_Windows] && [is_CygwinGit]} {
++			set _gitworktree [exec cygpath --windows [git rev-parse --show-toplevel]]
++		} else {
++			set _gitworktree [git rev-parse --show-toplevel]
++		}
+ 		set _prefix [git rev-parse --show-prefix]
+ 	} err]} {
+ 	if {[is_gitvars_error $err]} {
+@@ -2152,7 +2165,11 @@
+ 	if {[is_Cygwin]} {
+ 		set explorer "/bin/cygstart.exe --explore"
+ 	} elseif {[is_Windows]} {
+-		set explorer "explorer.exe"
++		if {[is_CygwinGit]} {
++			set explorer  [_which "explorer"]
++		} else {
++			set explorer "explorer.exe"
++		}
+ 	} elseif {[is_MacOSX]} {
+ 		set explorer "open"
+ 	} else {

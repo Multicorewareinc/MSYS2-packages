@@ -1,0 +1,198 @@
+# Maintainer: Alexey Pavlov <alexpux@gmail.com>
+#
+# aarch64-pc-msys build of git, staged into the cross sysroot.
+# Sources and all six patches are taken unchanged from the native git/ recipe,
+# at the native recipe's version rather than the standalone script's 2.50.1 -
+# the patches are maintained against this one.
+#
+# See build() for the differences from the native recipe and from the script.
+
+_target=aarch64-pc-msys
+_sysroot=/usr/${_target}
+
+pkgbase=git
+pkgname=cross-msysarm64-git
+pkgver=2.55.0
+pkgrel=1
+pkgdesc="The fast distributed version control system (${_target})"
+arch=('x86_64')
+url="https://git-scm.com/"
+msys2_repository_url="https://git.kernel.org/pub/scm/git/git.git"
+msys2_references=(
+  "cpe: cpe:/a:git:git"
+  "cpe: cpe:/a:git-scm:git"
+  "cpe: cpe:/a:git_project:git"
+)
+license=('spdx:GPL-2.0-only')
+groups=('cross-msysarm64')
+# The native recipe also depends on nano, openssh, perl and less; none has a
+# cross-msysarm64 package yet.  git runs without them, minus the editor,
+# ssh:// transport and the Perl-based subcommands (git-svn, git-send-email).
+depends=('cross-msysarm64-curl'
+         'cross-msysarm64-expat'
+         'cross-msysarm64-openssl'
+         'cross-msysarm64-zlib'
+         'cross-msysarm64-libiconv'
+         'cross-msysarm64-runtime-devel')
+makedepends=('cross-msysarm64-gcc' 'cross-msysarm64-binutils' 'autotools')
+options=('!strip' 'staticlibs')
+source=("${pkgbase}-${pkgver}.tar.gz"::https://github.com/git/git/archive/v${pkgver}.tar.gz
+        1.7.9-cygwin.patch
+        git-1.8.4-msys2.patch
+        git-2.3.5-mingw-pwd.patch
+        git-2.8.2-Cygwin-Allow-DOS-paths.patch
+        git-tcsh-completion-fixes.patch
+        git-2.43.0-git-gui.patch
+        0001-aspell.patch)
+sha256sums=('72923418db7b26dfddc21e2268660c5118e560bdfaa09b4489b67b38e9b69c49'
+            '32baa705d76789d82316a1325e61c9a261114eaa9814dca9c05683bf63069dea'
+            '9bc4da5022c5004c4c5b45417b25c6636ddf0ac338574a624c2c775d4394546d'
+            '336159815092f503e0254ebbbea2b637ffc09a36217c4c644167b86852568272'
+            '148a2c45de2c8bb2dfffc96bd40523f860a4b13f4e661609636158b7b3bc930b'
+            '6f25aae9e92469d5e284dcf372e15ee0e57ff91531e691e7391f9bfb78f73626'
+            'bf82f6017b62887c76adf2c883c004c913193e43d1c62ddbca66465b024df9ef'
+            '28ae4263169ef2b32ab2d6190752e5605d1ae3931a8f92cc5f3b38e3012d31dd')
+
+apply_patch_with_msg() {
+  for _fname in "$@"
+  do
+    msg2 "Applying ${_fname}"
+    patch -Nbp1 -i "${srcdir}"/${_fname}
+  done
+}
+
+prepare() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  rm -f compat/win32/git.manifest compat/win32/resource.rc
+  apply_patch_with_msg \
+    git-1.8.4-msys2.patch \
+    git-2.3.5-mingw-pwd.patch \
+    git-2.8.2-Cygwin-Allow-DOS-paths.patch \
+    git-tcsh-completion-fixes.patch
+
+  # git-gui works with git4win + native tcl/tk, or cygwin git + cygwin tcl/tk.
+  # We have a mix where git is cygwin but tcl/tk is native, so we need to adjust
+  # a few things, so git-gui works in the mingw environments at least.
+  apply_patch_with_msg git-2.43.0-git-gui.patch
+
+  # mingw aspell might work, but "--mode" is broken there,
+  # so force cygwin variant for now
+  apply_patch_with_msg 0001-aspell.patch
+
+  make configure
+}
+
+build() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  export lt_cv_deplibs_check_method='pass_all'
+  export MSYSTEM=CYGWIN
+
+  # Appended, never prepended - see cross-msysarm64-xz for why.
+  PATH="${PATH}:${_sysroot}/bin:${_sysroot}/usr/bin"
+  export PATH
+
+  # The --with/--without set is the standalone script's, which is the native
+  # recipe's list with everything that has no cross-msysarm64 package turned
+  # off.  Consequences: no PCRE2, so "git grep -P" is unavailable; no tcl/tk, so
+  # no gitk or git-gui; no Python, so no git-p4.
+  #
+  # --with-iconv differs from the script, which passes --without-iconv.
+  # cross-msysarm64-libiconv is installed, and without it git cannot re-encode
+  # commit messages, so i18n.commitEncoding and the log --encoding option stop
+  # working.  The script predates that package being available.
+  #
+  # The four ac_cv_* overrides are the script's.  They answer probes that
+  # autoconf cannot run when host and build differ, and which it then guesses
+  # wrongly for this platform; they are the values Cygwin uses.
+  #
+  # -O0 -g and -specs=${_SPECS} are the script's flags.  The specs file supplies
+  # -e _msys_dll_entry for shared links.  The profile sets !buildflags, so the
+  # flags are passed here rather than inherited.
+  local _triplet="${_target%-msys}-cygwin"
+
+  ./configure \
+    --build=${_triplet} \
+    --host=${_triplet} \
+    --prefix=${_sysroot}/usr \
+    --sysconfdir=${_sysroot}/etc \
+    --libexecdir=${_sysroot}/usr/lib \
+    --without-libpcre2 \
+    --without-tcltk \
+    --without-python \
+    --with-iconv \
+    --with-curl \
+    --with-openssl \
+    --with-zlib \
+    --with-expat \
+    --with-editor=nano \
+    --htmldir=${_sysroot}/usr/share/doc/git/html \
+    --mandir=${_sysroot}/usr/share/man \
+    ac_cv_fread_reads_directories=no \
+    ac_cv_snprintf_returns_bogus=no \
+    ac_cv_iconv_omits_bom=no \
+    ac_cv_c_c99_format=yes \
+    CFLAGS="-O0 -g -specs=${_SPECS}" \
+    LDFLAGS="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+
+  # uname_O=Cygwin is the script's and is required.  git's Makefile does not use
+  # the configure triplet to pick its platform block; it runs `uname -o` on the
+  # build machine.  Left alone it detects Msys and takes the MinGW path, which
+  # is a different platform entirely - native Windows paths, no fork, its own
+  # compat layer.
+  #
+  # NO_GETTEXT/NO_TCLTK/NO_PYTHON match the configure flags above.  The native
+  # recipe builds man pages with "make man", which needs asciidoc and
+  # docbook-xsl; neither is installed here, so no man pages are built or
+  # installed.
+  #
+  # NO_RUST is needed as of git 2.55.  Rust is opt-*out* there - the Makefile
+  # says "Define NO_RUST if you want to disable features and subsystems written
+  # in Rust" and sets -DWITH_RUST unless it is defined - so the native recipe's
+  # WITH_RUST=1 only restates the default.  Left alone the build runs cargo,
+  # which has no cross toolchain for aarch64-pc-msys here and fails before it
+  # gets that far anyway:
+  #
+  #     error: couldn't create a temp dir: Access is denied. (os error 5)
+  #            at path "C:\Windows\rustcmVK9Yl"
+  #
+  # cargo resolving TMPDIR to C:\Windows under makepkg is a second problem
+  # behind the first; NO_RUST avoids both.  The C fallbacks for anything Rust
+  # would have provided are what gets built.
+  local _mk=(uname_O=Cygwin NO_RUST=YesPlease NO_GETTEXT=YesPlease NO_TCLTK=YesPlease NO_PYTHON=YesPlease)
+
+  make "${_mk[@]}" all
+  make -C contrib/subtree prefix=${_sysroot}/usr "${_mk[@]}" all
+
+  [[ -f git.exe ]] || { error "git.exe was not produced"; return 1; }
+}
+
+package() {
+  cd "${srcdir}/${pkgbase}-${pkgver}"
+  local _mk=(uname_O=Cygwin NO_RUST=YesPlease NO_GETTEXT=YesPlease NO_TCLTK=YesPlease NO_PYTHON=YesPlease)
+
+  make "${_mk[@]}" INSTALLDIRS=vendor DESTDIR="${pkgdir}" install
+
+  # bash completion
+  mkdir -p "${pkgdir}${_sysroot}"/usr/share/bash-completion/completions/
+  install -m644 ./contrib/completion/git-completion.bash \
+    "${pkgdir}${_sysroot}"/usr/share/bash-completion/completions/git
+  # fancy git prompt
+  mkdir -p "${pkgdir}${_sysroot}"/usr/share/git/
+  install -m644 ./contrib/completion/git-prompt.sh \
+    "${pkgdir}${_sysroot}"/usr/share/git/git-prompt.sh
+  # subtree installation
+  sed "s|libexec/git-core|lib/git-core|" -i contrib/subtree/Makefile
+  make -C contrib/subtree prefix=${_sysroot}/usr "${_mk[@]}" DESTDIR="${pkgdir}" install
+
+  # the rest of the contrib stuff
+  cp -a ./contrib/* "${pkgdir}${_sysroot}"/usr/share/git/
+
+  # Remove *.orig files left by patch -b
+  find "${pkgdir}${_sysroot}" -type f -name "*.orig" -exec rm -f {} \;
+
+  [[ -f ${pkgdir}${_sysroot}/usr/bin/git.exe ]] || {
+    error "git.exe was not installed"; return 1
+  }
+}
