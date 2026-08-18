@@ -53,7 +53,7 @@ cc1 -E %{traditional|traditional-cpp:-traditional-cpp}
 %{mdaz-ftz:crtfastmath.o%s;Ofast|ffast-math|funsafe-math-optimizations:%{!shared:%{!mno-daz-ftz:crtfastmath.o%s}}}    %{!shared:%:if-exists(default-manifest.o%s)}   %{fvtable-verify=none:%s;     fvtable-verify=preinit:vtv_end.o%s;     fvtable-verify=std:vtv_end.o%s}    crtend.o%s
 
 *link:
--m aarch64pe  %{mwindows:--subsystem windows}   %{mconsole:--subsystem console}      %{shared: %{mdll: %eshared and mdll are not compatible}}   %{shared: --shared} %{mdll:--dll}   %{static:-Bstatic} %{!static:-Bdynamic}   %{shared|mdll: %{!m32:-e _msys_dll_entry} %{m32:-e __msys_dll_entry@12} --enable-auto-image-base}   %(shared_libgcc_undefs)   --dll-search-prefix=cyg   %{rdynamic: --export-all-symbols}   %{!shared: %{!mdll: %{m32:--large-address-aware} --tsaware}}
+-m aarch64pe  %{mwindows:--subsystem windows}   %{mconsole:--subsystem console}      %{shared: %{mdll: %eshared and mdll are not compatible}}   %{shared: --shared} %{mdll:--dll}   %{static:-Bstatic} %{!static:-Bdynamic}   %{shared|mdll: %{!m32:-e _msys_dll_entry} %{m32:-e __msys_dll_entry@12} --enable-auto-image-base}   %(shared_libgcc_undefs)   --dll-search-prefix=cyg   %{rdynamic: --export-all-symbols}   %{!shared: %{!mdll: %{m32:--large-address-aware} --tsaware}}   --disable-high-entropy-va
 
 *lib:
   %{pg:-lgmon}   %{pthread: }   -lcygwin   %{mwindows:-lgdi32 -lcomdlg32}   %{fvtable-verify=preinit:-lvtv -lpsapi;     fvtable-verify=std:-lvtv -lpsapi}   -ladvapi32 -lshell32 -luser32 -lkernel32

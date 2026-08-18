@@ -74,6 +74,60 @@ fix_shadowing_headers() {
   fi
 }
 
+# Install the vendored specs as the cross gcc's DEFAULT specs file.
+#
+# The profile defines
+#     LDFLAGS="-specs=${_SPECS} -Wl,--disable-high-entropy-va"
+# but also sets !buildflags, which makes makepkg clear CFLAGS/LDFLAGS before
+# build() runs - so neither the specs nor the ASLR flag ever reached a single
+# package.  Recipes that set their own CFLAGS (gettext, ncurses, ...) would
+# drop them again even if they did.
+#
+# That matters because HIGH_ENTROPY_VA lets the loader place allocations
+# anywhere in the 128 TB address space, including inside the fixed 8 GiB window
+# 0x800000000-0xA00000000 that the cygheap must reserve at a FIXED address (the
+# cygheap holds internal pointers, so a forked child cannot relocate it).  When
+# an allocation lands in that window the reservation fails and the child dies -
+# msys2-runtime#7, the "flaky fork".  Measured on one bash.exe, only the PE flag
+# differing: 11 failures in 2000 forks with it set, 0 with it cleared.
+#
+# gcc reads $libdir/specs automatically when present, so installing it there
+# applies it to every compile and link regardless of what makepkg or a recipe
+# does with flags.  It also makes the -e _msys_dll_entry fix automatic, which
+# the recipes currently patch in by hand.
+install_default_specs() {
+  local gccdir specs
+  gccdir="$(dirname "$(${TARGET}-gcc -print-libgcc-file-name 2>/dev/null)")" || return 1
+  [[ -d $gccdir ]] || die "cannot locate the cross gcc lib dir"
+  specs="${gccdir}/specs"
+
+  if [[ -f $specs ]] && cmp -s "${CROSSARM64_DIR}/aarch64-pc-msys.specs" "$specs"; then
+    msg "default specs already installed at ${specs}"
+    return 0
+  fi
+  cp -f "${CROSSARM64_DIR}/aarch64-pc-msys.specs" "$specs" ||
+    die "failed to install default specs to ${specs}"
+  msg "installed default gcc specs at ${specs}"
+
+  # Prove it took: a binary built with no flags at all must not be
+  # HIGH_ENTROPY_VA, or every package built afterwards reintroduces #7.
+  local t rc
+  t=$(mktemp -d)
+  printf 'int main(void){return 0;}
+' > "$t/t.c"
+  if ${TARGET}-gcc -O2 -o "$t/t.exe" "$t/t.c" 2>/dev/null; then
+    if ${TARGET}-objdump -p "$t/t.exe" 2>/dev/null |
+         grep -q "HIGH_ENTROPY_VA"; then
+      rm -rf "$t"
+      die "default specs installed but binaries are still HIGH_ENTROPY_VA - msys2-runtime#7 would persist"
+    fi
+    msg "verified: binaries link without HIGH_ENTROPY_VA"
+  else
+    warn "could not compile the specs check program; not verified"
+  fi
+  rm -rf "$t"
+}
+
 # Files in the sysroot owned by no package can shadow packaged ones - a stale
 # msys-z.dll and six empty w32api stub archives were found this way.  Report
 # them rather than deleting anything automatically.

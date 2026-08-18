@@ -31,6 +31,9 @@ pacman -S --needed --noconfirm "${HOST_PKGS[@]}"
 msg "checking the cross toolchain"
 require_toolchain
 
+msg "installing the cross gcc default specs (msys2-runtime#7: no HIGH_ENTROPY_VA)"
+install_default_specs
+
 msg "checking the sysroot for files that could shadow packaged ones"
 check_unowned_sysroot_files
 
