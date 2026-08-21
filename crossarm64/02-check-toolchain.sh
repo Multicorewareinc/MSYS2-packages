@@ -54,12 +54,29 @@ else
   bad "DLL entry point (with specs)" "AddressOfEntryPoint is 0 - the DLL would never initialise"
 fi
 
+# Same link WITHOUT an explicit -specs=.  This used to demonstrate
+# MSYS2-packages#22 (entry point 0 with the stock specs).  Since the default
+# specs are installed into the gcc lib dir (see install_default_specs), gcc
+# reads them automatically and this link gets them too - so it no longer tests
+# stock behaviour, and reporting "#22 appears to be fixed" here would be wrong:
+# the bug is masked, not fixed.  Repurposed into what it can now genuinely
+# assert - that the default specs really are in effect, which is also what
+# keeps HIGH_ENTROPY_VA off every binary (msys2-runtime#7).
 $CC -shared -o stock.dll lib.c 2>/dev/null
 entry0=$(${TARGET}-objdump -p stock.dll 2>/dev/null | awk '/AddressOfEntryPoint/{print $2}')
-if [[ $entry0 == 0000000000000000 ]]; then
-  note "DLL entry point (stock specs)" "0 as expected - MSYS2-packages#22, why -specs is mandatory"
+if [[ -n $entry0 && $entry0 != 0000000000000000 ]]; then
+  ok "DLL entry point (default specs)" "non-zero - default specs are in effect"
 else
-  ok "DLL entry point (stock specs)" "non-zero - #22 appears to be fixed"
+  bad "DLL entry point (default specs)" "0 - default specs not installed; run 00-prereqs.sh (MSYS2-packages#22)"
+fi
+
+# The specs also carry --disable-high-entropy-va.  A binary linked with no
+# flags at all must not be HIGH_ENTROPY_VA, or the cygheap reservation in a
+# forked child can fail intermittently - msys2-runtime#7.
+if ${TARGET}-objdump -p min.exe 2>/dev/null | grep -q HIGH_ENTROPY_VA; then
+  bad "no HIGH_ENTROPY_VA (msys2-runtime#7)" "set - forks will fail intermittently"
+else
+  ok "no HIGH_ENTROPY_VA (msys2-runtime#7)" "clear"
 fi
 
 # __thread needs -lgcc_eh on this target: emulated TLS, and
