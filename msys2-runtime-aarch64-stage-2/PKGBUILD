@@ -657,6 +657,10 @@ package() {
   fi
   echo "packaged ${_partb_ok}/25 cygwin-linked utils"
   [ -n "${_partb_missing}" ] && echo "  not built (see CI smoke gate):${_partb_missing}"
+  # Last statement in package(): when _partb_missing is empty (all 25 utils
+  # built) the test is false, so package() returned 1 and a fully successful
+  # build was reported as "A failure occurred in package()".
+  return 0
 }
 
 
