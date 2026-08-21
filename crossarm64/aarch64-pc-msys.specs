@@ -62,7 +62,7 @@ cc1 -E %{traditional|traditional-cpp:-traditional-cpp}
 
 
 *libgcc:
- -lgcc 
+ -lgcc -lgcc_eh 
 
 *startfile:
   %{!shared: %{!mdll: crt0%O%s   %{pg:gcrt0%O%s}}}  %{shared:crtbeginS.o%s;:crtbegin.o%s}   %{fvtable-verify=none:%s;     fvtable-verify=preinit:vtv_start.o%s;     fvtable-verify=std:vtv_start.o%s}
