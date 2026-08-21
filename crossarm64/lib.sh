@@ -63,8 +63,19 @@ fix_shadowing_headers() {
   #
   # Deriving the list means a change in what runtime-devel ships cannot silently
   # reintroduce the problem.
+  # Only remove a header that runtime-devel STILL owns.  Several of these
+  # paths are also shipped by a real package - usr/include/iconv.h is
+  # libiconv's - and pacman reassigns ownership to whichever installed
+  # last.  Deleting by runtime-devel's file list alone therefore destroys
+  # libiconv's own header, after which anything including <iconv.h> fails:
+  #     conftest.c: fatal error: iconv.h: No such file or directory
+  # which makes gettext/bash configure decide iconv is unusable and fall
+  # back to a bundled libintl.
+  local owner
   while IFS= read -r f; do
     [[ -e $f ]] || continue
+    owner=$(pacman -Qoq "$f" 2>/dev/null)
+    [[ $owner == cross-msysarm64-runtime-devel ]] || continue
     rm -f "$f" && removed=$((removed + 1))
   done < <(pacman -Ql cross-msysarm64-runtime-devel 2>/dev/null |
              awk '{print $2}' |
