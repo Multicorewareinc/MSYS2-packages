@@ -216,6 +216,7 @@ build() {
   }
   echo "GCC_BASE resolved to ${GCC_BASE} (stddef.h present)"
   export CFLAGS="\
+  -ffile-prefix-map=${srcdir}=. \
   -nostdinc \
   -D_MB_CAPABLE=1 \
   -isystem ${GCC_BASE}/include \
@@ -225,6 +226,7 @@ build() {
   -O1 -pipe"
 
   export CXXFLAGS="\
+  -ffile-prefix-map=${srcdir}=. \
   -nostdinc \
   -nostdinc++ \
   -D_MB_CAPABLE=1 \

@@ -249,6 +249,7 @@ build() {
   # leave plain CFLAGS/CPPFLAGS unset in the environment -- the host probe then
   # uses clean defaults (and the explicit command-line CFLAGS=-O2 below).
   _target_cflags="\
+-ffile-prefix-map=${srcdir}=. \
 -nostdinc \
 -isystem ${GCC_BASE}/include \
 -isystem ${GCC_BASE}/include-fixed \
