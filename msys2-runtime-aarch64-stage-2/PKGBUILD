@@ -652,7 +652,15 @@ package() {
     _partb_missing="${_partb_missing} cygps(ps)"
   fi
   echo "packaged ${_partb_ok}/25 cygwin-linked utils"
-  [ -n "${_partb_missing}" ] && echo "  not built (see CI smoke gate):${_partb_missing}"
+  # Must NOT be a bare `[ ... ] && echo` as the last statement of package():
+  # makepkg runs package() under errexit, so the function's exit status is that of
+  # its final command. With every util built, _partb_missing is empty, the test
+  # returns 1 and makepkg aborts after all the work succeeded -- failing only on
+  # total success. Use if/fi so the function always ends on a true command.
+  if [ -n "${_partb_missing}" ]; then
+    echo "  not built:${_partb_missing}"
+  fi
+  return 0
 }
 
 
