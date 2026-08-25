@@ -2,10 +2,14 @@
 
 pkgbase=gettext
 pkgname=('gettext' 'gettext-devel' 'libgettextpo' 'libasprintf' 'libintl')
+# Cross seed only needs libintl; build just that sub-package for aarch64-pc-msys.
+if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+  pkgname=('libintl')
+fi
 pkgver=0.22.5
 pkgrel=1
 pkgdesc="GNU internationalization library"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.gnu.org/software/gettext/"
 msys2_references=(
   "cpe: cpe:/a:gnu:gettext"
@@ -13,7 +17,12 @@ msys2_references=(
 license=('GPL')
 makedepends=('groff' 'libiconv-devel' 'autotools' 'gcc')
 options=(!docs)
-source=(https://ftp.gnu.org/pub/gnu/gettext/${pkgname}-${pkgver}.tar.gz{,.sig}
+# ${pkgname} is an ARRAY and expands to its FIRST element, so the seed-only
+# override above (pkgname=('libintl')) silently rewrote this URL to
+# libintl-0.22.5.tar.gz -- which does not exist on ftp.gnu.org (404). The
+# tarball and its extracted directory are named after the pkgbase in every
+# case, so pin both to ${pkgbase} and leave them immune to the split.
+source=(https://ftp.gnu.org/pub/gnu/gettext/${pkgbase}-${pkgver}.tar.gz{,.sig}
         gettext-tools-tests-locale-ll-es.patch
         gettext-0.21.1-autopoint-V.patch
         gettext-0.21.1-cygwin-ftm.patch
@@ -54,7 +63,7 @@ validpgpkeys=('462225C3B46F34879FC8496CD605848ED7E69871'  # Daiki Ueno
               '9001B85AF9E1B83DF1BDA942F5BE8B267C6A406D') # Bruno Haible (Open Source Development)
 
 prepare() {
-  cd "${srcdir}/${pkgname}-${pkgver}"
+  cd "${srcdir}/${pkgbase}-${pkgver}"
 
   # Cygwin patches
   patch -p1 -i $srcdir/gettext-tools-tests-locale-ll-es.patch
@@ -89,10 +98,67 @@ prepare() {
 
   libtoolize --copy --force
   ./autogen.sh --skip-gnulib
+
+  # libtool 2.6.2-1 lost every `msys*` case label, so $host_os=msys matches no
+  # Windows branch and libtool silently refuses shared libraries.
+  # gettext generates several sub-configures (gettext-runtime, gettext-tools,
+  # libtextstyle, ...); patch each one that exists rather than naming them.
+  # ltmain.sh is included -- its own `-lc` skip list also lost *-*-msys*, which
+  # downgrades links to static even when configure says "Shared libraries: yes".
+  source "${startdir}/../.ci/fix-msys-libtool.sh"
+  _lt_cfg=0 _lt_main=0
+  while IFS= read -r cfg; do
+    fix_msys_libtool "$cfg"
+    [[ ${cfg} == */ltmain.sh || ${cfg} == ltmain.sh ]] && _lt_main=1 || _lt_cfg=1
+  done < <(find . -maxdepth 4 \( -name configure -o -name ltmain.sh \) -type f)
+  # A find that matches nothing would sail past silently and reappear much later
+  # as a static-only build, which is the trap here. Require both kinds.
+  if [[ ${_lt_cfg} -eq 0 || ${_lt_main} -eq 0 ]]; then
+    echo "==> ERROR: expected both configure and ltmain.sh to patch" >&2
+    echo "    (configure=${_lt_cfg} ltmain=${_lt_main}); libtool would link static-only." >&2
+    return 1
+  fi
 }
 
 build() {
-	cd "${srcdir}/${pkgname}-${pkgver}"
+	cd "${srcdir}/${pkgbase}-${pkgver}"
+
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # Cross-build for aarch64-pc-msys (see .ci/makepkg-aarch64-cross.conf).
+    # The seed only needs libintl (msys-intl-8.dll + libintl.h + import lib) to
+    # link bash/coreutils, so configure the full tree but build+install ONLY
+    # gettext-runtime/intl — matching the ARM Cygwin bring-up. The gettext-tools
+    # (msgfmt/xgettext) are not part of the seed and are not shipped here.
+    #
+    # Keep the -msys host triple (do NOT apply the native -msys->-cygwin sed):
+    # the installed libtool already treats *-msys* as a Cygwin-family DLL
+    # platform (msys- DLL prefix), so a true aarch64-pc-msys target links.
+    #
+    # gt_cv_func_printf_posix=yes: cross default is wrong and would inject
+    #   printf replacements into the libintl header.
+    ./configure \
+      --build=${CHOST} \
+      --host=aarch64-pc-msys \
+      --prefix=/usr \
+      --with-included-libcroco \
+      --with-included-libunistring \
+      --with-included-libxml \
+      --with-included-glib \
+      --with-included-gettext \
+      --without-emacs \
+      --enable-shared \
+      --enable-static \
+      --disable-java \
+      --disable-native-java \
+      --disable-csharp \
+      --disable-openmp \
+      gt_cv_func_printf_posix=yes
+
+    make -C gettext-runtime/intl
+    make -C gettext-runtime/intl DESTDIR="${srcdir}/dest" install
+    rm -f ${srcdir}/dest/usr/lib/charset.alias
+    return
+  fi
 
   local CHOST="$(echo "${CHOST}" | sed 's|-msys$|-cygwin|')"
 
@@ -120,7 +186,9 @@ build() {
 }
 
 check() {
-  cd "${srcdir}/${pkgname}-${pkgver}"
+  # target binaries can't run on the x64 (emulated) cross host
+  [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]] && return 0
+  cd "${srcdir}/${pkgbase}-${pkgver}"
   make check
 }
 
@@ -163,6 +231,18 @@ package_libintl() {
   pkgdesc="GNU Internationalization runtime library"
   groups=('libraries')
   depends=('gcc-libs' 'libiconv')
+
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # Cross seed: only gettext-runtime/intl was built. Ship the full intl
+    # install (DLL + libintl.h + import/static libs) so bash/coreutils can
+    # both link against and run with it.
+    options=('staticlibs')
+    mkdir -p ${pkgdir}/usr
+    cp -rf ${srcdir}/dest/usr/bin ${pkgdir}/usr/ 2>/dev/null || true
+    cp -rf ${srcdir}/dest/usr/include ${pkgdir}/usr/ 2>/dev/null || true
+    cp -rf ${srcdir}/dest/usr/lib ${pkgdir}/usr/ 2>/dev/null || true
+    return
+  fi
 
   mkdir -p ${pkgdir}/usr/bin
   cp -f ${srcdir}/dest/usr/bin/msys-intl-8.dll ${pkgdir}/usr/bin/
