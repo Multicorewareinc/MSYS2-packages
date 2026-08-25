@@ -15,7 +15,7 @@ diff --git a/gcc/config.gcc b/gcc/config.gcc
 index 008a7606782..61164605c5f 100644
 --- a/gcc/config.gcc
 +++ b/gcc/config.gcc
-@@ -1275,6 +1275,37 @@ aarch64*-*-gnu*)
+@@ -1275,6 +1275,40 @@ aarch64*-*-gnu*)
          tmake_file="${tmake_file} aarch64/t-aarch64"
          tm_defines="${tm_defines}  TARGET_DEFAULT_ASYNC_UNWIND_TABLES=1"
  	;;
@@ -24,11 +24,14 @@ index 008a7606782..61164605c5f 100644
 +	tm_file="${tm_file} aarch64/aarch64-coff.h"
 +	tm_file="${tm_file} aarch64/cygming.h"
 +	tm_file="${tm_file} i386/cygwin.h"
-+	tm_file="${tm_file} aarch64/msys.h"
 +	tm_file="${tm_file} i386/cygwin-w64.h"
 +	tm_file="${tm_file} i386/cygwin-stdint.h"
 +	tm_file="${tm_file} mingw/winnt.h"
 +	tm_file="${tm_file} mingw/winnt-dll.h"
++	# aarch64/msys.h MUST come last: it overrides LINK_SPEC/LIB_SPEC (MSYS DLL
++	# entry, --dll-search-prefix=msys-, -lmsys-2.0) set by the shared headers
++	# above, matching the x86_64-pc-msys port.
++	tm_file="${tm_file} aarch64/msys.h"
 +	xm_file=i386/xm-cygwin.h
 +	tmake_file="${tmake_file} aarch64/t-aarch64"
 +	tmake_file="${tmake_file} mingw/t-cygming t-slibgcc"
