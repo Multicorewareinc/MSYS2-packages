@@ -63,11 +63,13 @@ CEOF
     -o /usr/aarch64-pc-msys/lib/crt0.o
   echo "crt0.o stub installed"
 
-  # --- Stub: default-manifest.o ---
-  # Needed by the linker for PE manifests, not part of cygwin1.dll itself.
-  /usr/bin/aarch64-pc-msys-gcc -c /tmp/empty.c \
-    -o /usr/aarch64-pc-msys/lib/default-manifest.o
-  echo "default-manifest.o stub installed"
+  # --- default-manifest.o: NOT stubbed ---
+  # Removed for the same reason as in the parent recipe: the stub was an EMPTY
+  # object written into the live sysroot and never into ${pkgdir}, so it shipped
+  # in no package (every link against the PUBLISHED toolchain then failed with
+  # "ld: cannot find default-manifest.o") while masking that gap in-tree. The
+  # real object now comes from cross-msysarm64-windows-default-manifest;
+  # re-stubbing here would clobber it with the empty one.
 
   # --- Stub: libcygwin.a ---
   # Circular dep: libcygwin.a IS what we're building.
