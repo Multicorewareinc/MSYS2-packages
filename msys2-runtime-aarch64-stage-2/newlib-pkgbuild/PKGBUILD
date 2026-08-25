@@ -166,13 +166,8 @@ prepare() {
   cp -r ${srcdir}/${_realname}/winsup/cygwin/include/* \
         /usr/aarch64-pc-msys/include/
 
-  # winsup's ntdll.h does `#include <w32api/ntstatus.h>`, but cross-msysarm64-
-  # w32api-headers installs the Win32 headers FLAT into include/, not under
-  # include/w32api/. Build the w32api/ mirror so the include resolves. The full
-  # toolchain build's stage-1 runtime creates this; build-test runs only stage-2,
-  # so do it here too. Idempotent.
-  mkdir -p /usr/aarch64-pc-msys/include/w32api
-  cp -rf /usr/aarch64-pc-msys/include/*.h /usr/aarch64-pc-msys/include/w32api/ 2>/dev/null || true
+  # (w32api/ mirror no longer needed: cross-msysarm64-w32api-headers now installs
+  # the Win32 headers under include/w32api/ via --enable-w32api.)
 
   # --- Verify aarch64-specific patches are present ---
   echo "--- Header patch verification ---"
@@ -253,6 +248,7 @@ build() {
 -isystem ${GCC_BASE}/include \
 -isystem ${GCC_BASE}/include-fixed \
 -isystem ${SYSROOT_INC} \
+-isystem ${SYSROOT_INC}/w32api \
 -D_MB_CAPABLE=1 \
 "
 

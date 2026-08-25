@@ -198,8 +198,15 @@ export CFLAGS="\
 -isystem ${GCC_BASE}/include \
 -isystem ${GCC_BASE}/include-fixed \
 -isystem ${SYSROOT_INC} \
+-isystem ${SYSROOT_INC}/w32api \
 -D_MB_CAPABLE=1 \
 "
+  # -isystem ${SYSROOT_INC}/w32api: the Win32 API headers live under
+  # include/w32api/ (cross-msysarm64-w32api-headers --enable-w32api). This
+  # -nostdinc build must add it explicitly, since the gcc spec's automatic
+  # `-idirafter .../include/w32api` is suppressed under -nostdinc. This lets a
+  # bare <windows.h> resolve while winsup's <w32api/ntstatus.h> resolves via
+  # ${SYSROOT_INC} above.
   
   export CPPFLAGS="$CFLAGS"
   export CFLAGS_FOR_TARGET="$CFLAGS"
