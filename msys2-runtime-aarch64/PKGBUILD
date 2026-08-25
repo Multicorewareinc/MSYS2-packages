@@ -220,6 +220,7 @@ build() {
   -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include-fixed \
   -isystem ${HOME}/headers/aarch64-pc-msys/include \
   -isystem /usr/aarch64-pc-msys/include \
+  -isystem /usr/aarch64-pc-msys/include/w32api \
   -O1 -pipe"
 
   export CXXFLAGS="\
@@ -232,6 +233,7 @@ build() {
   -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++/backward \
   -isystem ${HOME}/headers/aarch64-pc-msys/include \
   -isystem /usr/aarch64-pc-msys/include \
+  -isystem /usr/aarch64-pc-msys/include/w32api \
   -O1 -pipe"
   export ac_cv_lib_sframe_sframe_decode=no
   export ac_cv_lib_zstd_ZSTD_isError=no
@@ -283,7 +285,8 @@ devices.o: CXXFLAGS += -mno-early-ldp-fusion
 fhandler/netdrive.o: CXXFLAGS += -Wno-misleading-indentation
 libc/minires-os-if.o: CFLAGS += -no-integrated-cpp
 EOF
-mkdir -p /usr/aarch64-pc-msys/include/w32api && cp /usr/aarch64-pc-msys/include/*.h /usr/aarch64-pc-msys/include/w32api/
+# (w32api/ mirror no longer needed: cross-msysarm64-w32api-headers now installs
+# the Win32 headers under include/w32api/ via --enable-w32api.)
 # crt mingw import libs: prefer the ones already in the INSTALLED cross sysroot
 # (cross-msysarm64-w32api-runtime, or a prior pacman -U, put them there). Only fall
 # back to copying from the mingw sysroot /opt/aarch64-w64-mingw32/lib/ when a lib is
@@ -332,6 +335,7 @@ aarch64-pc-msys-g++ -DHAVE_CONFIG_H \
 -isystem /usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++/backward \
 -isystem ${HOME}/headers/aarch64-pc-msys/include \
 -isystem /usr/aarch64-pc-msys/include \
+-isystem /usr/aarch64-pc-msys/include/w32api \
 -fno-merge-constants \
 -O1 -Wno-misleading-indentation \
 -MT msys2_path_conv.o -MD -MP -MF /tmp/msys2_path_conv.Tpo \
