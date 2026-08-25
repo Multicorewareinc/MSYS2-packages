@@ -6,7 +6,7 @@ pkgver=6.3.0
 pkgrel=2
 pkgdesc="A free library for arbitrary precision arithmetic"
 groups=('libraries')
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://gmplib.org/"
 msys2_references=(
   "cpe: cpe:/a:gmplib:gmp"
@@ -28,10 +28,37 @@ prepare() {
   patch -p1 < "${srcdir}/0001-gcc15.patch"
 
   autoreconf -fi
+
+  # libtool 2.6.2-1 lost every `msys*` case label, so $host_os=msys matches no
+  # Windows branch and libtool silently refuses shared libraries (-> static-only
+  # -> no dest/usr/bin -> package_gmp() fails). ltmain.sh is patched too: its
+  # own `-lc` skip list lost *-*-msys*, which downgrades the link to static even
+  # after configure reports "Shared libraries: yes". See the helper for details.
+  source "${startdir}/../.ci/fix-msys-libtool.sh"
+  fix_msys_libtool configure ltmain.sh
 }
 
 build() {
   cd "${srcdir}/${pkgname}-${pkgver}"
+
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # Cross-build for aarch64-pc-msys (see .ci/makepkg-aarch64-cross.conf).
+    # --disable-fat: fat binaries select an x86 CPU variant at runtime; on
+    #   aarch64 gmp uses its own arch dispatch, so fat is meaningless/harmful.
+    CFLAGS+=" -Wno-attributes" \
+    CXXFLAGS+=" -Wno-attributes" \
+    ./configure \
+      --host=aarch64-pc-msys \
+      --build=${CHOST} \
+      --prefix=/usr \
+      --enable-cxx \
+      --disable-fat \
+      --enable-shared --disable-static
+    make
+    make DESTDIR="${srcdir}/dest" install
+    return
+  fi
+
 # get rid of those pesky declspec warnings
   CFLAGS+=" -Wno-attributes" \
   CXXFLAGS+=" -Wno-attributes" \
@@ -45,11 +72,36 @@ build() {
 }
 
 check() {
+  # target binaries can't run on the x64 (emulated) cross host
+  [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]] && return 0
   cd "${srcdir}/${pkgname}-${pkgver}"
   make check
 }
 
 package_gmp() {
+  # A static-only build leaves no dest/usr/bin at all, and a bare `cp` then
+  # reports a missing directory instead of the actual problem. Say what is
+  # really wrong: libtool silently refusing to build shared libraries.
+  #
+  # Two DIFFERENT failures both end with no dest/usr/bin, so distinguish them
+  # rather than blaming the first one. If the DLLs exist but sit in usr/lib,
+  # the libraries built fine and only the install DESTINATION is wrong -- the
+  # `*msys*,*lai,yes,no,*.dll` label that puts PE DLLs in bindir is missing from
+  # ltmain.sh (rule 4 in .ci/fix-msys-libtool.sh).
+  if [[ ! -d $srcdir/dest/usr/bin ]]; then
+    if compgen -G "$srcdir/dest/usr/lib/*.dll" > /dev/null; then
+      echo "==> ERROR: gmp DID build shared libraries, but libtool installed them" >&2
+      echo "    into usr/lib instead of usr/bin:" >&2
+      ls -1 "$srcdir"/dest/usr/lib/*.dll >&2
+      echo "    This is the missing '*msys*,*lai,yes,no,*.dll' tdlname label in" >&2
+      echo "    ltmain.sh, NOT a static-only build. See .ci/fix-msys-libtool.sh." >&2
+    else
+      echo "==> ERROR: no $srcdir/dest/usr/bin — gmp built no shared libraries." >&2
+      echo "    Check configure's 'checking if libtool supports shared libraries'." >&2
+    fi
+    return 1
+  fi
+
   mkdir -p ${pkgdir}/usr
   cp -rf $srcdir/dest/usr/bin ${pkgdir}/usr/
   cp -rf $srcdir/dest/usr/share ${pkgdir}/usr/

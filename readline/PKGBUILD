@@ -7,7 +7,7 @@ _patchlevel=003 #prepare for some patches
 pkgver=${_basever}.${_patchlevel}
 pkgrel=1
 pkgdesc="GNU readline library"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://tiswww.case.edu/php/chet/readline/rltop.html"
 msys2_repository_url="https://cgit.git.savannah.gnu.org/cgit/readline.git"
 msys2_references=(
@@ -58,12 +58,25 @@ prepare() {
 build() {
   CFLAGS+=" -Wno-error=incompatible-pointer-types"
 
+  # Host triple + ncurses discovery for the aarch64-pc-msys cross build.
+  # ncurses (the prior seed package) is staged under the toolchain sysroot at
+  # /usr/aarch64-pc-msys/usr, and its widechar headers live in .../include/ncursesw.
+  local _host=${CHOST}
+  local _xcflags=""
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _host=aarch64-pc-msys
+    # GCC-15 is too new for readline's sources; -std=gnu89 per ARM bring-up.
+    _xcflags=" -std=gnu89 -I/usr/aarch64-pc-msys/usr/include/ncursesw"
+    CFLAGS+="${_xcflags}"
+    LDFLAGS+=" -L/usr/aarch64-pc-msys/usr/lib"
+  fi
+
   mkdir -p ${srcdir}/build-static-${MSYSTEM} && cd ${srcdir}/build-static-${MSYSTEM}
 
   ../${pkgbase}-${_basever}/configure \
     --prefix=/usr \
     --build=${CHOST} \
-    --host=${CHOST} \
+    --host=${_host} \
     --with-curses \
     --disable-shared \
     --enable-static \
@@ -79,7 +92,7 @@ build() {
   ../${pkgbase}-${_basever}/configure \
     --prefix=/usr \
     --build=${CHOST} \
-    --host=${CHOST} \
+    --host=${_host} \
     --with-curses \
     --disable-static \
     --enable-shared \
