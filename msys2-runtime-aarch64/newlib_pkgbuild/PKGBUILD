@@ -64,12 +64,10 @@ CEOF
   echo "crt0.o stub installed"
 
   # --- default-manifest.o: NOT stubbed ---
-  # Removed for the same reason as in the parent recipe: the stub was an EMPTY
-  # object written into the live sysroot and never into ${pkgdir}, so it shipped
-  # in no package (every link against the PUBLISHED toolchain then failed with
-  # "ld: cannot find default-manifest.o") while masking that gap in-tree. The
-  # real object now comes from cross-msysarm64-windows-default-manifest;
-  # re-stubbing here would clobber it with the empty one.
+  # The old stub was an empty object written into the live sysroot and never into
+  # ${pkgdir}, so it shipped in no package while masking the gap in-tree. The real
+  # object comes from cross-msysarm64-windows-default-manifest; re-stubbing here
+  # would clobber it with the empty one.
 
   # --- Stub: libcygwin.a ---
   # Circular dep: libcygwin.a IS what we're building.
@@ -177,6 +175,15 @@ build() {
   export ac_cv_header_rpc_xdr_h=yes
   export ac_cv_func_xdrmem_create=yes
   export newlib_cv_xdr_dir=yes
+  # winsup/configure.ac probes libbfd's deps with AC_CHECK_LIB (link tests) for
+  # sframe_decode/-lsframe and ZSTD_isError/-lzstd. This tree also runs
+  # AC_NO_EXECUTABLES (cross bootstrap: target binaries can't run on the build
+  # host), and a link test after AC_NO_EXECUTABLES is a hard configure error
+  # ("link tests are not allowed after AC_NO_EXECUTABLES"). Pre-seed the cache
+  # so configure skips both link tests — we don't link sframe/zstd (the dumper
+  # is --disable-dumper). Mirrors the stage-2 recipes.
+  export ac_cv_lib_sframe_sframe_decode=no
+  export ac_cv_lib_zstd_ZSTD_isError=no
   unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
   # Do NOT export CC/CXX here — let configure use native gcc for host tools
   # and CC_FOR_TARGET for building target libraries (newlib, winsup)
@@ -204,15 +211,30 @@ export CFLAGS="\
 -D_MB_CAPABLE=1 \
 "
   # -isystem ${SYSROOT_INC}/w32api: the Win32 API headers live under
-  # include/w32api/ (cross-msysarm64-w32api-headers --enable-w32api). This
-  # -nostdinc build must add it explicitly, since the gcc spec's automatic
-  # `-idirafter .../include/w32api` is suppressed under -nostdinc. This lets a
-  # bare <windows.h> resolve while winsup's <w32api/ntstatus.h> resolves via
+  # include/w32api/, and this -nostdinc build must add that dir explicitly since
+  # the gcc spec's automatic -idirafter is suppressed under -nostdinc. Lets a bare
+  # <windows.h> resolve while winsup's <w32api/ntstatus.h> resolves via
   # ${SYSROOT_INC} above.
   
   export CPPFLAGS="$CFLAGS"
   export CFLAGS_FOR_TARGET="$CFLAGS"
   export CPPFLAGS_FOR_TARGET="$CFLAGS"
+
+  # winsup's C++ TUs include libstdc++ headers such as <new>, and
+  # -nostdinc/-nostdinc++ drops the default C++ search, so add the target
+  # libstdc++ include dirs explicitly (mirrors the stage-2 runtime recipe).
+  export CXXFLAGS="\
+-nostdinc \
+-nostdinc++ \
+-isystem ${GCC_BASE}/include \
+-isystem ${GCC_BASE}/include-fixed \
+-isystem ${GCC_BASE}/include/c++ \
+-isystem ${GCC_BASE}/include/c++/backward \
+-isystem ${SYSROOT_INC} \
+-isystem ${SYSROOT_INC}/w32api \
+-D_MB_CAPABLE=1 \
+"
+  export CXXFLAGS_FOR_TARGET="$CXXFLAGS"
 
   # GCC_VER=15.0.1
   # GCC_BASE=/usr/lib/gcc/aarch64-pc-msys/${GCC_VER}
@@ -229,7 +251,7 @@ export CFLAGS="\
   # export CPPFLAGS="$CFLAGS"
   # export CFLAGS_FOR_TARGET="$CFLAGS"
   # export CPPFLAGS_FOR_TARGET="$CFLAGS"
-  CXXFLAGS_FOR_TARGET="-Wno-error -Wno-narrowing" \
+  CXXFLAGS_FOR_TARGET="${CXXFLAGS} -Wno-error -Wno-narrowing" \
   ${srcdir}/${_realname}/configure \
     --prefix=/usr \
     --build=${_build} \
@@ -269,7 +291,7 @@ export CFLAGS="\
     MINGW_CXX=aarch64-w64-mingw32-g++ \
     MINGW_CC=aarch64-w64-mingw32-gcc  \
     CFLAGS="-O2 -pipe -D_MB_CAPABLE=1" \
-    CXXFLAGS="-O2 -pipe -D_MB_CAPABLE=1"
+    CXXFLAGS="${CXXFLAGS} -O2 -pipe"
 
       # 🔍 MB_CAPABLE CHECK STARTS HERE
   echo "Checking _MB_CAPABLE..."
@@ -288,7 +310,36 @@ EOF
 
   echo "✅ MB_CAPABLE is defined"
   # 🔍 MB_CAPABLE CHECK ENDS HERE  
-  make -j$(nproc)
+  # --------------------------------------------------------------------------
+  # Build ONLY what this recipe delivers: the newlib target libs.
+  #
+  # This is the first runtime step, and its job is to produce the archives
+  # (libc.a / libm.a / libg.a) that package() ships into the sysroot and that
+  # msys2-runtime-aarch64 copies in as ${srcdir}/newlib before building winsup.
+  #
+  # A bare top-level `make` builds `all`, which reaches past newlib into
+  # all-target-winsup -- compiling the whole ~700-object winsup tree and linking
+  # msys-2.0.dll. That work is redundant: the next step configures winsup
+  # separately (winsup/configure, not the top-level one) with its own flags and
+  # its own granular make, and never reads an artifact out of this tree's
+  # winsup/ directory.
+  #
+  # `all-target-newlib` is the exact goal. The top-level Makefile makes winsup
+  # depend on newlib, never the reverse, so asking for newlib alone is
+  # well-defined and cannot silently skip anything newlib needs.
+  # --------------------------------------------------------------------------
+  make -j$(nproc) all-target-newlib
+
+  # Fail here rather than letting a downstream step trip over a missing archive:
+  # package() and the next build step both hard-require these three.
+  _nlb="${srcdir}/runtime-build/${_target}/newlib"
+  for _l in libc.a libm.a libg.a; do
+    [ -f "${_nlb}/${_l}" ] || {
+      echo "FATAL: newlib ${_l} missing at ${_nlb} after 'make all-target-newlib'" >&2
+      exit 1
+    }
+  done
+  echo "newlib target libs built: libc.a libm.a libg.a"
 }
 
 
