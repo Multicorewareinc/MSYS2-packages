@@ -133,6 +133,57 @@ a mirror; the checksums in the PKGBUILDs are what verify them either way. Set
 **`--skippgpcheck`** is passed because the upstream signing keys are not
 imported on a fresh machine. The `sha256sums` in each PKGBUILD still apply.
 
+## Running the bash testsuite
+
+Stage 3 (`30-test.sh`) is a smoke test, not a conformance run.  For a real
+signal, run bash's own suite in the assembled root and compare it against the
+same suite on x86_64 MSYS2 - anything failing on both is an MSYS trait, and only
+what fails on AArch64 alone is a port problem.
+
+Current result, bash 5.3.15 on both sides:
+
+    fail on both arches   18
+    AArch64 only           2   run-jobs, run-printf
+    x86_64 only            4   run-assoc, run-ifs, run-new-exp, run-read
+
+Four things have to be set up or the comparison measures the harness instead of
+the port.
+
+**Build the test helpers for the target.**  `recho`, `zecho`, `printenv` and
+`xcase` are built by the bash Makefile with `CC_FOR_BUILD`, which produces host
+binaries.  Compile them with the cross compiler instead (bash 5.3 defines those
+targets at Makefile lines 1068, 1071, 1074, 1077).
+
+**`printenv` needs `__declspec(dllimport)` on `environ`.**  `support/printenv.c`
+declares a bare `extern char **environ`.  On MSYS `environ` is a *data* symbol
+exported by msys-2.0.dll, so ld falls back to auto-import, and on AArch64 the
+pseudo-relocation is not applied - the program reads a bogus address and prints
+nothing, silently.  It is not diagnosable from the test output: four groups
+(appendop, func, nameref, varenv) just lose every line a `printenv` should have
+produced.  `getenv()` is unaffected, since function imports need no
+pseudo-relocation.  Patch the declaration before compiling:
+
+    sed 's/^extern char \*\*environ;/__declspec(dllimport) extern char **environ;/'
+
+**msys-2.0.dll must be HARDLINKED into `tests/`, not copied.**  A copy gives two
+runtime instances in one process tree and every helper dies with rc=139.
+
+**The root needs awk, locale, tzset and zoneinfo**, or tests fail for reasons
+unrelated to the port.  `locale.exe` and `tzset.exe` come from
+`cross-msysarm64-runtime` 3.6.7-8 or newer (earlier packages predate the winsup
+utils being packaged, so check what is actually installed).  Zone files are
+architecture-independent - copy the host's `/usr/share/zoneinfo`.  There is no
+cross awk recipe; one-true-awk cross-compiles in one step, its makefile already
+using `HOSTCC` for the `maketab` generator:
+
+    make CC=aarch64-pc-msys-gcc HOSTCC=gcc YACC="bison -d" CFLAGS="-O2"
+
+(the link has no `-o`, so the result is `a.exe`).
+
+`run-read` hangs on AArch64 but completes on x86_64 - keep it out of the run or
+the suite stalls indefinitely, and remember the group counts then differ, 86
+against 87.
+
 ## What does not work yet
 
 `socket()` segfaults in the AArch64 runtime

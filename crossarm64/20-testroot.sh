@@ -83,6 +83,13 @@ export GIT_TEMPLATE_DIR=/usr/share/git-core/templates
 export GIT_PAGER=cat
 export PAGER=cat
 
+# MSYS2 sets TZ at login from the Windows setting rather than using
+# /etc/localtime (see filesystem/profile.tzset.sh upstream).  Without this the
+# runtime falls back to UTC and any test that formats a local time differs -
+# bash's printf tests are the ones that notice.  Needs tzset.exe and the
+# zoneinfo tree; see the testsuite notes in README.md for staging both.
+test -z "$TZ" && export TZ=$(/usr/bin/tzset 2>/dev/null)
+
 export PATH=/usr/bin:/usr/local/bin
 export HOME=/home
 export TMPDIR=/tmp
