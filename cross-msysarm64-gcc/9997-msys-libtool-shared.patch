@@ -1,24 +1,31 @@
 From: Windows on ARM Experiments <woarm64@qti.qualcomm.com>
-Subject: [PATCH] gcc/configure: recognise aarch64-*-msys* as a shared-library
- (PE/Win32) host so libgcc is built shared
+Subject: [PATCH] gcc/configure: recognise msys* as a shared-library (PE/Win32)
+ host alongside cygwin*
 
-The generated gcc/configure only teaches libtool that
-"cygwin* | mingw* | pw32* | cegcc*" hosts can build shared libraries. The
-aarch64-pc-msys host_os is "msys", which matches none of those arms, so
-libtool decides can_build_shared=no -> enable_shared=no. gcc/Makefile.in then
-compiles the driver WITHOUT -DENABLE_SHARED_LIBGCC (it is gated on
-@enable_shared@ == yes), so SHARED_LIBGCC_SPEC collapses to a bare "-lgcc" and
-the driver never emits -lgcc_s/-lgcc_eh. The SEH exception unwinder
-(_Unwind_*, __gxx_personality_seh0) then lives only in libgcc_eh.a / the shared
-cyggcc_s DLL and libstdc++ fails to link against it.
+The cross toolchain is configured --build/--host=x86_64-pc-msys with
+--target=aarch64-pc-cygwin, so host_os is "msys" regardless of the target
+triple. Stock gcc/configure only teaches libtool that
+"cygwin* | mingw* | pw32* | cegcc*" hosts can build shared libraries, so
+host_os=msys falls through the dynamic-linker case to the default arm:
 
-Mirror the msys* handling already applied to libstdc++-v3/configure by
-9998-aarch64-pc-msys-target.patch into gcc/configure (the libtool-generic
-arms), so the msys host is treated like cygwin for shared-library support.
-With this, enable_shared=yes, the driver gets -DENABLE_SHARED_LIBGCC and emits
-"-lgcc_s -lgcc", and the SEH unwinder resolves from the shared libgcc DLL --
-removing the need for the post-build LIB2ADDEH/ar/libtool hand-fixes in the
-cross-msysarm64-gcc recipe.
+    *)
+      dynamic_linker=no
+
+and then, in order:
+
+    test "$dynamic_linker" = no && can_build_shared=no
+    test "$can_build_shared" = "no" && enable_shared=no
+
+gcc/Makefile.in gates the driver's -DENABLE_SHARED_LIBGCC on @enable_shared@,
+so the driver is compiled without it, SHARED_LIBGCC_SPEC collapses to a bare
+"-lgcc", and the driver never emits -lgcc_s. The SEH exception unwinder
+(_Unwind_*, __gcc_personality_seh0) then lives only in libgcc_eh.a and the
+shared DLL, and libstdc++ fails to link with undefined _Unwind_Resume.
+
+This ADDS msys* to the relevant host_os arms rather than replacing cygwin*:
+all 31 cygwin* arms are preserved, so Cygwin hosts are unaffected, and only
+the 18 arms that gate PE/Win32 shared-library support gain an msys* label.
+
 --- a/gcc/configure
 +++ b/gcc/configure
 @@ -15917,7 +15917,7 @@
@@ -26,7 +33,7 @@ cross-msysarm64-gcc recipe.
      ;;
  
 -  cygwin* | mingw* | cegcc*)
-+  msys* | mingw* | cegcc*)
++  msys* | cygwin* | mingw* | cegcc*)
      # On Win9x/ME, this test blows up -- it succeeds, but takes
      # about 5 minutes as the teststring grows exponentially.
      # Worse, since 9x/ME are not pre-emptively multitasking,
@@ -35,7 +42,7 @@ cross-msysarm64-gcc recipe.
    ;;
  
 -cygwin*)
-+msys*)
++msys* | cygwin*)
    # func_win32_libid is a shell function defined in ltmain.sh
    lt_cv_deplibs_check_method='file_magic ^x86 archive import|^x86 DLL'
    lt_cv_file_magic_cmd='func_win32_libid'
@@ -44,7 +51,7 @@ cross-msysarm64-gcc recipe.
    symcode='[BCDT]'
    ;;
 -cygwin* | mingw* | pw32* | cegcc*)
-+msys* | mingw* | pw32* | cegcc*)
++msys* | cygwin* | mingw* | pw32* | cegcc*)
    symcode='[ABCDGISTW]'
    ;;
  hpux*)
@@ -53,7 +60,7 @@ cross-msysarm64-gcc recipe.
        ;;
  
 -    mingw* | cygwin* | pw32* | os2* | cegcc*)
-+    mingw* | msys* | pw32* | os2* | cegcc*)
++    mingw* | msys* | cygwin* | pw32* | os2* | cegcc*)
        # This hack is so that the source file can tell whether it is being
        # built for inclusion in a dll (and should export symbols for example).
        # Although the cygwin gcc ignores -fPIC, still need this for old-style
@@ -62,7 +69,7 @@ cross-msysarm64-gcc recipe.
        ;;
  
 -    mingw* | cygwin* | pw32* | os2* | cegcc*)
-+    mingw* | msys* | pw32* | os2* | cegcc*)
++    mingw* | msys* | cygwin* | pw32* | os2* | cegcc*)
        # This hack is so that the source file can tell whether it is being
        # built for inclusion in a dll (and should export symbols for example).
        lt_prog_compiler_pic='-DDLL_EXPORT'
@@ -71,7 +78,7 @@ cross-msysarm64-gcc recipe.
  
    case $host_os in
 -  cygwin* | mingw* | pw32* | cegcc*)
-+  msys* | mingw* | pw32* | cegcc*)
++  msys* | cygwin* | mingw* | pw32* | cegcc*)
      # FIXME: the MSVC++ port hasn't been tested in a loooong time
      # When not using gcc, we currently assume that we are using
      # Microsoft Visual C++.
@@ -80,7 +87,7 @@ cross-msysarm64-gcc recipe.
        ;;
  
 -    cygwin* | mingw* | pw32* | cegcc*)
-+    msys* | mingw* | pw32* | cegcc*)
++    msys* | cygwin* | mingw* | pw32* | cegcc*)
        # _LT_TAGVAR(hardcode_libdir_flag_spec, ) is actually meaningless,
        # as there is no search path for DLLs.
        hardcode_libdir_flag_spec='-L$libdir'
@@ -89,7 +96,7 @@ cross-msysarm64-gcc recipe.
        ;;
  
 -    cygwin* | mingw* | pw32* | cegcc*)
-+    msys* | mingw* | pw32* | cegcc*)
++    msys* | cygwin* | mingw* | pw32* | cegcc*)
        # When not using gcc, we currently assume that we are using
        # Microsoft Visual C++.
        # hardcode_libdir_flag_spec is actually meaningless, as there is
@@ -98,7 +105,7 @@ cross-msysarm64-gcc recipe.
    ;;
  
 -cygwin* | mingw* | pw32* | cegcc*)
-+msys* | mingw* | pw32* | cegcc*)
++msys* | cygwin* | mingw* | pw32* | cegcc*)
    version_type=windows
    shrext_cmds=".dll"
    need_version=no
@@ -106,27 +113,25 @@ cross-msysarm64-gcc recipe.
  
    case $GCC,$host_os in
 -  yes,cygwin* | yes,mingw* | yes,pw32* | yes,cegcc*)
-+  yes,msys* | yes,mingw* | yes,pw32* | yes,cegcc*)
++  yes,msys* | yes,cygwin* | yes,mingw* | yes,pw32* | yes,cegcc*)
      library_names_spec='$libname.dll.a'
      # DLL is installed to $(libdir)/../bin by postinstall_cmds
      postinstall_cmds='base_file=`basename \${file}`~
-@@ -20554,8 +20554,8 @@
+@@ -20554,7 +20554,7 @@
      shlibpath_overrides_runpath=yes
  
      case $host_os in
 -    cygwin*)
--      # Cygwin DLLs use 'cyg' prefix rather than 'lib'
-+    msys*)
-+      # msys DLLs use 'cyg' prefix rather than 'lib'
++    msys* | cygwin*)
+       # Cygwin DLLs use 'cyg' prefix rather than 'lib'
        soname_spec='`echo ${libname} | sed -e 's/^lib/cyg/'``echo ${release} | $SED -e 's/[.]/-/g'`${versuffix}${shared_ext}'
  
-       sys_lib_search_path_spec="$sys_lib_search_path_spec /usr/lib/w32api"
 @@ -21210,7 +21210,7 @@
      lt_cv_dlopen_libs=
      ;;
  
 -  cygwin*)
-+  msys*)
++  msys* | cygwin*)
      lt_cv_dlopen="dlopen"
      lt_cv_dlopen_libs=
      ;;
@@ -135,7 +140,7 @@ cross-msysarm64-gcc recipe.
          ;;
  
 -      cygwin* | mingw* | pw32* | cegcc*)
-+      msys* | mingw* | pw32* | cegcc*)
++      msys* | cygwin* | mingw* | pw32* | cegcc*)
          # _LT_TAGVAR(hardcode_libdir_flag_spec, CXX) is actually meaningless,
          # as there is no search path for DLLs.
          hardcode_libdir_flag_spec_CXX='-L$libdir'
@@ -144,7 +149,7 @@ cross-msysarm64-gcc recipe.
        # PIC is the default for these OSes.
        ;;
 -    mingw* | cygwin* | os2* | pw32* | cegcc*)
-+    mingw* | msys* | os2* | pw32* | cegcc*)
++    mingw* | msys* | cygwin* | os2* | pw32* | cegcc*)
        # This hack is so that the source file can tell whether it is being
        # built for inclusion in a dll (and should export symbols for example).
        # Although the cygwin gcc ignores -fPIC, still need this for old-style
@@ -153,7 +158,7 @@ cross-msysarm64-gcc recipe.
      export_symbols_cmds_CXX="$ltdll_cmds"
    ;;
 -  cygwin* | mingw* | cegcc*)
-+  msys* | mingw* | cegcc*)
++  msys* | cygwin* | mingw* | cegcc*)
      export_symbols_cmds_CXX='$NM $libobjs $convenience | $global_symbol_pipe | $SED -e '\''/^[BCDGRS][ ]/s/.*[ ]\([^ ]*\)/\1 DATA/;/^.*[ ]__nm__/s/^.*[ ]__nm__\([^ ]*\)[ ][^ ]*/\1 DATA/;/^I[ ]/d;/^[AITW][ ]/s/.* //'\'' | sort | uniq > $export_symbols'
    ;;
    *)
@@ -162,7 +167,7 @@ cross-msysarm64-gcc recipe.
    ;;
  
 -cygwin* | mingw* | pw32* | cegcc*)
-+msys* | mingw* | pw32* | cegcc*)
++msys* | cygwin* | mingw* | pw32* | cegcc*)
    version_type=windows
    shrext_cmds=".dll"
    need_version=no
@@ -170,18 +175,16 @@ cross-msysarm64-gcc recipe.
  
    case $GCC,$host_os in
 -  yes,cygwin* | yes,mingw* | yes,pw32* | yes,cegcc*)
-+  yes,msys* | yes,mingw* | yes,pw32* | yes,cegcc*)
++  yes,msys* | yes,cygwin* | yes,mingw* | yes,pw32* | yes,cegcc*)
      library_names_spec='$libname.dll.a'
      # DLL is installed to $(libdir)/../bin by postinstall_cmds
      postinstall_cmds='base_file=`basename \${file}`~
-@@ -24282,8 +24282,8 @@
+@@ -24282,7 +24282,7 @@
      shlibpath_overrides_runpath=yes
  
      case $host_os in
 -    cygwin*)
--      # Cygwin DLLs use 'cyg' prefix rather than 'lib'
-+    msys*)
-+      # msys DLLs use 'cyg' prefix rather than 'lib'
++    msys* | cygwin*)
+       # Cygwin DLLs use 'cyg' prefix rather than 'lib'
        soname_spec='`echo ${libname} | sed -e 's/^lib/cyg/'``echo ${release} | $SED -e 's/[.]/-/g'`${versuffix}${shared_ext}'
  
-       ;;
