@@ -171,6 +171,44 @@ prepare() {
   grep -q "__aarch64__" /usr/aarch64-pc-cygwin/include/cygwin/signal.h 2>/dev/null && \
     echo "signal.h aarch64 patch OK" || \
     echo "WARNING: signal.h missing aarch64 defines"
+
+  # 9997 must have reached gcc/configure. We configure --host=x86_64-pc-msys, so
+  # host_os is "msys" whatever the target is; unpatched, it matches none of the
+  # PE/Win32 libtool arms and falls through to `*) dynamic_linker=no`, which
+  # yields enable_shared=no -> no -DENABLE_SHARED_LIBGCC -> no -lgcc_s -> the SEH
+  # unwinder is unreachable and libstdc++ fails on undefined _Unwind_Resume some
+  # 40 minutes later.
+  #
+  # Checked here on the patched source because it is a purely static property.
+  # Checking the generated gcc/Makefile instead would need gcc/configure to have
+  # run, which happens later under make.
+  local _gcfg="${srcdir}/${_realname}/gcc/configure"
+  if [ ! -f "${_gcfg}" ]; then
+    echo "==> ERROR: ${_gcfg} not found -- cannot verify 9997." >&2
+    return 1
+  fi
+  # Plain grep -c: it already prints 0 when there is no match, so a `|| echo 0`
+  # fallback would emit a second line and break the comparison below.
+  local _nmsys _ncyg
+  _nmsys=$(grep -c 'msys\*' "${_gcfg}")
+  _ncyg=$(grep -c 'cygwin\*' "${_gcfg}")
+  if [ "${_nmsys}" -lt 18 ]; then
+    echo "==> ERROR: gcc/configure has only ${_nmsys} msys* host_os arms (expected 18);" >&2
+    echo "    9997 did not apply and host_os=msys would fall through to" >&2
+    echo "    '*) dynamic_linker=no'." >&2
+    return 1
+  fi
+  # The patch is additive: it must not have replaced any cygwin* label.
+  if [ "${_ncyg}" -lt 31 ]; then
+    echo "==> ERROR: cygwin* arms dropped to ${_ncyg} (expected 31) -- 9997" >&2
+    echo "    replaced rather than added labels." >&2
+    return 1
+  fi
+  if ! grep -q '^msys\* | cygwin\* | mingw\* | pw32\* | cegcc\*)' "${_gcfg}"; then
+    echo "==> ERROR: the dynamic_linker host_os arm has no msys* label." >&2
+    return 1
+  fi
+  echo "==> ok: msys* present on the dynamic_linker arm; enable_shared will be yes"
 }
 
 build() {
@@ -232,13 +270,16 @@ build() {
   #   * The SEH unwind sources (unwind-seh/sjlj/c) are selected by libgcc's own
   #     config.host aarch64-*-cygwin* case -> tmake_eh_file=mingw/t-seh-eh, so
   #     LIB2ADDEH already resolves to the SEH set.
-  #   * Patch 9997 teaches gcc/configure that aarch64-*-msys* is a shared-library
-  #     (PE/Win32) host, so libtool no longer forces enable_shared=no. The driver
-  #     is then compiled WITH -DENABLE_SHARED_LIBGCC and emits "-lgcc_s -lgcc",
-  #     so _Unwind_*/__gxx_personality_seh0 resolve from the shared libgcc DLL
-  #     (cyggcc_s-seh-1.dll / libgcc_s.dll.a). This removes the need for the old
-  #     Fix-2 (ar-merging EH objects into libgcc.a) and Fix-3 (appending
-  #     libkernel32.a to the libstdc++ libtool postdeps).
+  #   * Patch 9997 teaches gcc/configure that host_os=msys is a shared-library
+  #     (PE/Win32) host, so libtool no longer forces enable_shared=no. This is a
+  #     HOST-side patch and is orthogonal to the target triple: we configure
+  #     --host=x86_64-pc-msys, so host_os stays "msys" even though the target is
+  #     aarch64-pc-cygwin. The driver is then compiled WITH
+  #     -DENABLE_SHARED_LIBGCC and emits "-lgcc_s -lgcc", so
+  #     _Unwind_*/__gcc_personality_seh0 resolve from the shared libgcc DLL.
+  #     This removes the need for the old Fix-2 (ar-merging EH objects into
+  #     libgcc.a) and Fix-3 (appending libkernel32.a to the libstdc++ libtool
+  #     postdeps). prepare() gates that the patch actually applied.
   make all-target-libgcc
   make all-target-libstdc++-v3
   make all-target-libgomp   || echo "WARNING: libgomp failed"
