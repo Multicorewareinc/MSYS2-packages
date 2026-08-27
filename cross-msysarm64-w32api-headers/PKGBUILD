@@ -2,7 +2,7 @@
 pkgname="cross-msysarm64-w32api-headers"
 pkgver=13.0.0
 pkgrel=8
-pkgdesc="Win32 API headers for aarch64-pc-msys sysroot (WoA)"
+pkgdesc="Win32 API headers for aarch64-pc-cygwin sysroot (WoA)"
 arch=('x86_64')
 url="https://github.com/Windows-on-ARM-Experiments/mingw-woarm64"
 license=('custom')
@@ -18,14 +18,14 @@ source=(
 sha256sums=('SKIP'
             'SKIP')
 
-_target=aarch64-pc-msys
+_target=aarch64-pc-cygwin
 _sysroot=/usr/${_target}
 
 prepare() {
   cd ${srcdir}/mingw-w64
   # Source-level replacement for the old post-build basetsd.h `sed`: guard the
   # 64-bit-pointer INT_PTR/LONG_PTR/HANDLE_PTR typedefs on
-  # __aarch64__ as well as _WIN64, since the GNU aarch64-pc-msys toolchain does
+  # __aarch64__ as well as _WIN64, since the GNU aarch64-pc-cygwin toolchain does
   # not predefine _WIN64. A named, reviewable, upstreamable patch.
   git apply --whitespace=fix \
     "${srcdir}"/0001-basetsd-aarch64-64bit-pointers.patch
@@ -61,8 +61,8 @@ package() {
   cd ${srcdir}/headers-build
 
   # Install to both bare sysroot and sysroot/usr for maximum compatibility
-  # Some tools look in /usr/aarch64-pc-msys/include/
-  # Others look in /usr/aarch64-pc-msys/usr/include/
+  # Some tools look in /usr/aarch64-pc-cygwin/include/
+  # Others look in /usr/aarch64-pc-cygwin/usr/include/
 
   # Install to sysroot/usr (standard prefix install)
   make DESTDIR=${pkgdir} install

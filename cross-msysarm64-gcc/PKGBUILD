@@ -1,11 +1,11 @@
 # Maintainer: Windows on ARM Experiments
 
 _realname=gcc
-_target=aarch64-pc-msys
+_target=aarch64-pc-cygwin
 pkgname="cross-msysarm64-${_realname}"
 pkgver=15.0.1
 pkgrel=3
-pkgdesc="Cross GCC stage2 for aarch64-pc-msys (with full runtime)"
+pkgdesc="Cross GCC stage2 for aarch64-pc-cygwin (with full runtime)"
 arch=('i686' 'x86_64')
 url="https://gcc.gnu.org"
 license=('GPL' 'LGPL' 'FDL')
@@ -33,12 +33,10 @@ source=(
   0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch
   0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch
   9997-msys-libtool-shared.patch
-  9998-aarch64-pc-msys-target.patch
   9999-msys-macro.patch
   99995-msys-aarch64-pseudo-reloc.patch
 )
 sha256sums=(
-  'SKIP'
   'SKIP'
   'SKIP'
   'SKIP'
@@ -62,19 +60,18 @@ prepare() {
   #   0012-Handle-spaces-in-path-for-default-manifest.patch \
   #   0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch \
   #   0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch \
-  #   9998-aarch64-pc-msys-target.patch
+  #   9999-msys-macro.patch
   git apply --whitespace=fix \
     "${srcdir}"/0012-Handle-spaces-in-path-for-default-manifest.patch \
     "${srcdir}"/0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch \
     "${srcdir}"/0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch \
     "${srcdir}"/9997-msys-libtool-shared.patch \
-    "${srcdir}"/9998-aarch64-pc-msys-target.patch \
     "${srcdir}"/9999-msys-macro.patch \
     "${srcdir}"/99995-msys-aarch64-pseudo-reloc.patch
   # --- Verify stage1 compiler is present ---
   echo "--- Stage2 prerequisite check ---"
-  which aarch64-pc-msys-gcc || {
-    echo "FATAL: aarch64-pc-msys-gcc not found — install cross-msysarm64-gcc-stage1"
+  which aarch64-pc-cygwin-gcc || {
+    echo "FATAL: aarch64-pc-cygwin-gcc not found — install cross-msysarm64-gcc-stage1"
     exit 1
   }
 
@@ -98,7 +95,7 @@ prepare() {
       echo "       Build msys2-runtime-aarch64 (stage 1) before cross-msysarm64-gcc."
       exit 1
     fi
-    cp -f "${_src}" "/usr/aarch64-pc-msys/lib/${_dst}"
+    cp -f "${_src}" "/usr/aarch64-pc-cygwin/lib/${_dst}"
   done
 
   # The build system links stage-2 libstdc++ etc. with `-lcygwin`, but this MSYS2
@@ -110,8 +107,8 @@ prepare() {
   # ships (msys2-runtime-aarch64-stage-2: `ln -sf libmsys-2.0.a libcygwin.a`) does
   # not exist in the sysroot yet. The FINAL installed toolchain gets libcygwin.a
   # from that runtime package, not from this line.
-  ln -sf libmsys-2.0.a /usr/aarch64-pc-msys/lib/libcygwin.a
-  if [ ! -e /usr/aarch64-pc-msys/lib/libcygwin.a ]; then
+  ln -sf libmsys-2.0.a /usr/aarch64-pc-cygwin/lib/libcygwin.a
+  if [ ! -e /usr/aarch64-pc-cygwin/lib/libcygwin.a ]; then
     echo "FATAL: failed to create libcygwin.a -> libmsys-2.0.a alias in sysroot"
     exit 1
   fi
@@ -119,7 +116,7 @@ prepare() {
   # libg.a is a LEGACY "debug libc" that modern newlib often does not emit — stage
   # it only if present (not fatal), matching the stage-2 runtime package.
   if [ -f "${_rt1}/src/newlib/libg.a" ]; then
-    cp -f "${_rt1}/src/newlib/libg.a" /usr/aarch64-pc-msys/lib/libg.a
+    cp -f "${_rt1}/src/newlib/libg.a" /usr/aarch64-pc-cygwin/lib/libg.a
   fi
   echo "staged stage-1 runtime + newlib libs into sysroot"
 
@@ -146,11 +143,11 @@ prepare() {
       echo "note: ${_o} not produced by stage-1 (optional) — skipping"
       continue
     fi
-    if ! aarch64-pc-msys-nm "${_s}" 2>/dev/null | grep -q "${_grep}"; then
+    if ! aarch64-pc-cygwin-nm "${_s}" 2>/dev/null | grep -q "${_grep}"; then
       echo "FATAL: ${_s} lacks '${_sym}' — looks like the bootstrap STUB; refusing to stage it."
       exit 1
     fi
-    cp -f "${_s}" "/usr/aarch64-pc-msys/lib/${_o}"
+    cp -f "${_s}" "/usr/aarch64-pc-cygwin/lib/${_o}"
     echo "staged real ${_o} into sysroot (has ${_sym})"
   done
 
@@ -158,8 +155,8 @@ prepare() {
   # After the staging above the sysroot crt0.o must be the REAL one. Reject the
   # bootstrap stub via its lack of an msys_crt0 reference rather than a fuzzy
   # byte-size heuristic.
-  _crt0=/usr/aarch64-pc-msys/lib/crt0.o
-  if aarch64-pc-msys-nm "${_crt0}" 2>/dev/null | grep -q "U msys_crt0"; then
+  _crt0=/usr/aarch64-pc-cygwin/lib/crt0.o
+  if aarch64-pc-cygwin-nm "${_crt0}" 2>/dev/null | grep -q "U msys_crt0"; then
     echo "crt0.o OK (real — references msys_crt0)"
   else
     echo "FATAL: ${_crt0} is missing or still the bootstrap STUB (no msys_crt0 ref)."
@@ -168,10 +165,10 @@ prepare() {
   fi
 
   # --- Verify key headers ---
-  [ -f /usr/aarch64-pc-msys/include/stdio.h ] && \
+  [ -f /usr/aarch64-pc-cygwin/include/stdio.h ] && \
     echo "stdio.h OK" || \
     echo "WARNING: stdio.h missing from sysroot"
-  grep -q "__aarch64__" /usr/aarch64-pc-msys/include/cygwin/signal.h 2>/dev/null && \
+  grep -q "__aarch64__" /usr/aarch64-pc-cygwin/include/cygwin/signal.h 2>/dev/null && \
     echo "signal.h aarch64 patch OK" || \
     echo "WARNING: signal.h missing aarch64 defines"
 }
@@ -230,12 +227,11 @@ build() {
 
   make all-gcc
 
-  # SEH exception unwinder — now handled structurally, no post-build hacks
-  #. Two pieces make this work:
+  # SEH exception unwinder — handled structurally, no post-build hacks.
+  # Two pieces make this work:
   #   * The SEH unwind sources (unwind-seh/sjlj/c) are selected by libgcc's own
-  #     config.host: aarch64-*-msys* -> tmake_eh_file=mingw/t-seh-eh (patch
-  #     9998), so LIB2ADDEH already resolves to the SEH set. The old Fix-1 sed
-  #     of the generated libgcc Makefile was a no-op.
+  #     config.host aarch64-*-cygwin* case -> tmake_eh_file=mingw/t-seh-eh, so
+  #     LIB2ADDEH already resolves to the SEH set.
   #   * Patch 9997 teaches gcc/configure that aarch64-*-msys* is a shared-library
   #     (PE/Win32) host, so libtool no longer forces enable_shared=no. The driver
   #     is then compiled WITH -DENABLE_SHARED_LIBGCC and emits "-lgcc_s -lgcc",

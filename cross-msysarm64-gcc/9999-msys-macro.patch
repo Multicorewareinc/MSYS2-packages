@@ -1,3 +1,35 @@
+From: Windows on ARM Experiments <woarm64@qti.qualcomm.com>
+Subject: [PATCH] aarch64 cygwin: define __MSYS__ and MSYS linkage
+
+The runtime is built with the standard aarch64-pc-cygwin triple, mirroring the
+x86_64-pc-msys -> x86_64-pc-cygwin move upstream: MSYS-ness is expressed
+through preprocessor macros and link/lib specs, not the triple name.
+
+x86_64 injects __MSYS__ and the msys- linkage into the shared
+i386/cygwin{,-w64}.h. Do the aarch64 equivalent without touching those shared
+headers: add gcc/config/aarch64/msys.h and append it as the LAST entry of the
+existing aarch64-*-cygwin* tm_file chain, so its overrides win:
+  - EXTRA_OS_CPP_BUILTINS: also define __MSYS__ / __MSYS2__ (__CYGWIN__ stays)
+  - LINK_SPEC: DLL entry _cygwin_dll_entry -> _msys_dll_entry,
+    --dll-search-prefix=msys-
+  - LIB_SPEC: runtime import lib -lcygwin -> -lmsys-2.0
+
+Without the LINK_SPEC/LIB_SPEC overrides every console program fails to link
+with an undefined reference to WinMain.
+
+diff --git a/gcc/config.gcc b/gcc/config.gcc
+--- a/gcc/config.gcc
++++ b/gcc/config.gcc
+@@ -1285,6 +1285,10 @@ aarch64-*-cygwin*)
+ 	tm_file="${tm_file} i386/cygwin-stdint.h"
+ 	tm_file="${tm_file} mingw/winnt.h"
+ 	tm_file="${tm_file} mingw/winnt-dll.h"
++	# aarch64/msys.h MUST come last: it overrides EXTRA_OS_CPP_BUILTINS and
++	# LINK_SPEC/LIB_SPEC set by the shared headers above.
++	tm_file="${tm_file} aarch64/msys.h"
+ 	xm_file=i386/xm-cygwin.h
+ 	tmake_file="${tmake_file} aarch64/t-aarch64"
+ 	tmake_file="${tmake_file} mingw/t-cygming t-slibgcc"
 diff --git a/gcc/config/aarch64/msys.h b/gcc/config/aarch64/msys.h
 new file mode 100644
 index 00000000000..04cd4618301
@@ -19,7 +51,7 @@ index 00000000000..04cd4618301
 +
 +/* MSYS2 linkage overrides.
 +
-+   This header is included LAST in the aarch64-*-msys* tm_file chain (after
++   This header is included LAST in the aarch64-*-cygwin* tm_file chain (after
 +   aarch64/cygming.h and i386/cygwin{,-w64}.h), so these #defines are the ones
 +   that take effect.  Without them the aarch64 port inherits the Cygwin values
 +   from the shared headers and every console program fails to link with an

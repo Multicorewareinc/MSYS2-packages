@@ -1,6 +1,6 @@
 # Maintainer: Windows on ARM Experiments
 #
-# Win32 API import libs for the aarch64-pc-msys cross sysroot.
+# Win32 API import libs for the aarch64-pc-cygwin cross sysroot.
 #
 # This is the aarch64 counterpart of the x64 `msys2-w32api-runtime` package:
 # both build mingw-w64-crt with `--enable-w32api` and ship the resulting Win32
@@ -8,7 +8,7 @@
 # the runtime/toolchain can link against the Windows API.
 #
 # x64 installs them into the host sysroot (/usr/lib); the cross build installs
-# them into the cross sysroot (/usr/aarch64-pc-msys/lib) so the host x86_64
+# them into the cross sysroot (/usr/aarch64-pc-cygwin/lib) so the host x86_64
 # MSYS2 is never touched. Source + arm64 configure args mirror the existing
 # `mingw-w64-cross-mingwarm64-crt` package (same Windows-on-ARM fork, built the
 # same way), so the libs are identical to the ones previously hand-copied from
@@ -17,7 +17,7 @@
 pkgname="cross-msysarm64-w32api-runtime"
 pkgver=13.0.0
 pkgrel=1
-pkgdesc="Win32 API import libs for aarch64-pc-msys sysroot (WoA)"
+pkgdesc="Win32 API import libs for aarch64-pc-cygwin sysroot (WoA)"
 arch=('x86_64')
 url="https://github.com/Windows-on-ARM-Experiments/mingw-woarm64"
 license=('custom')
@@ -35,7 +35,7 @@ source=(
 )
 sha256sums=('SKIP')
 
-_target=aarch64-pc-msys
+_target=aarch64-pc-cygwin
 _mingw_host=aarch64-w64-mingw32
 _sysroot=/usr/${_target}
 
@@ -69,7 +69,7 @@ package() {
   cd "${srcdir}/w32api-build"
 
   # Lands the import libs (and the mingw CRT objects, as x64 does) under
-  # ${pkgdir}/usr/aarch64-pc-msys/lib — the cross-sysroot analogue of x64's /usr/lib.
+  # ${pkgdir}/usr/aarch64-pc-cygwin/lib — the cross-sysroot analogue of x64's /usr/lib.
   make DESTDIR=${pkgdir} install
 
   echo "--- cross-msysarm64-w32api-runtime check ---"

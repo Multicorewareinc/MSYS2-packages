@@ -1,4 +1,4 @@
-Force the runtime-pseudo-reloc stub undef on aarch64-pc-msys shared links
+Force the runtime-pseudo-reloc stub undef on aarch64-pc-cygwin shared links
 
 ld synthesises the runtime-pseudo-reloc stub (*_ertr*.o) only AFTER it has
 finished scanning archives, so the stub's fresh reference to
@@ -18,7 +18,7 @@ The undef is gated on %{shared|mdll}, so executable links are unaffected.
 This must go in gcc/config/aarch64/msys.h, NOT in i386/cygwin-w64.h:
 config.gcc lists aarch64/msys.h LAST in tm_file for this target and that
 header #undef's LINK_SPEC, so any LINK_SPEC written into cygwin-w64.h is
-discarded.  Verify with `aarch64-pc-msys-gcc -dumpspecs | grep pei386` on the
+discarded.  Verify with `aarch64-pc-cygwin-gcc -dumpspecs | grep pei386` on the
 built driver, not by reading the headers.
 
 diff --git a/gcc/config/aarch64/msys.h b/gcc/config/aarch64/msys.h
