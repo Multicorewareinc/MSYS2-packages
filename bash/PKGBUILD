@@ -56,15 +56,15 @@ build() {
   export MSYSTEM=CYGWIN
 
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
-    # Cross-build for aarch64-pc-msys (see .ci/makepkg-aarch64-cross.conf).
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
     # Uses the seed readline/ncurses/libintl/libiconv staged under the toolchain
-    # sysroot at /usr/aarch64-pc-msys/usr.
+    # sysroot at /usr/aarch64-pc-cygwin/usr.
     #   - GCC-15 too new for bash sources: -std=gnu89 (build + target).
     #   - bash_cv_* : cross defaults for these AC_TRY_RUN probes are wrong.
     #   - CFLAGS_FOR_BUILD -fcommon: build-host helpers (mkbuiltins etc.) need it
     #     under GCC-15's default -fno-common.
     ./configure --build=${CHOST} \
-      --host=aarch64-pc-msys \
+      --host=aarch64-pc-cygwin \
       --prefix=/usr \
       --sysconfdir=/etc \
       --localstatedir=/var \
@@ -79,9 +79,9 @@ build() {
       bash_cv_dev_fd=standard \
       bash_cv_wexitstatus_offset=8 \
       bash_cv_termcap_lib=libncurses \
-      CFLAGS="-std=gnu89 -I/usr/aarch64-pc-msys/usr/include -I/usr/aarch64-pc-msys/usr/include/ncursesw" \
+      CFLAGS="-std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include -I/usr/aarch64-pc-cygwin/usr/include/ncursesw" \
       CFLAGS_FOR_BUILD="-fcommon -std=gnu89" \
-      LDFLAGS="${LDFLAGS} -L/usr/aarch64-pc-msys/usr/lib"
+      LDFLAGS="${LDFLAGS} -L/usr/aarch64-pc-cygwin/usr/lib"
 
     expr ${pkgrel} > .build || :
 

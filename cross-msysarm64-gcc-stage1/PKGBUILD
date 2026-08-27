@@ -1,13 +1,13 @@
 # Maintainer: Windows on ARM Experiments
 
 _realname=gcc
-_target=aarch64-pc-msys
+_target=aarch64-pc-cygwin
 pkgname="cross-msysarm64-${_realname}-stage1"
 provides=("cross-msysarm64-${_realname}")
 _realver=15.0.1
 pkgver=15.0.1dev
 pkgrel=9
-pkgdesc="Cross GCC for aarch64-pc-msys (stage1)"
+pkgdesc="Cross GCC for aarch64-pc-cygwin (stage1)"
 arch=('i686' 'x86_64')
 url="https://gcc.gnu.org"
 license=('GPL' 'LGPL' 'FDL')
@@ -33,11 +33,9 @@ source=(
   0012-Handle-spaces-in-path-for-default-manifest.patch
   0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch
   0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch
-  9998-aarch64-pc-msys-target.patch
   9999-msys-macro.patch
 )
 sha256sums=(
-  'SKIP'
   'SKIP'
   'SKIP'
   'SKIP'
@@ -69,7 +67,6 @@ prepare() {
     "${srcdir}"/0012-Handle-spaces-in-path-for-default-manifest.patch \
     "${srcdir}"/0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch \
     "${srcdir}"/0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch \
-    "${srcdir}"/9998-aarch64-pc-msys-target.patch \
     "${srcdir}"/9999-msys-macro.patch
 
   echo "--- GCC stage1 sysroot header check ---"

@@ -2,7 +2,7 @@
 
 pkgbase=gettext
 pkgname=('gettext' 'gettext-devel' 'libgettextpo' 'libasprintf' 'libintl')
-# Cross seed only needs libintl; build just that sub-package for aarch64-pc-msys.
+# Cross seed only needs libintl; build just that sub-package for aarch64-pc-cygwin.
 if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
   pkgname=('libintl')
 fi
@@ -124,21 +124,21 @@ build() {
 	cd "${srcdir}/${pkgbase}-${pkgver}"
 
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
-    # Cross-build for aarch64-pc-msys (see .ci/makepkg-aarch64-cross.conf).
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
     # The seed only needs libintl (msys-intl-8.dll + libintl.h + import lib) to
     # link bash/coreutils, so configure the full tree but build+install ONLY
     # gettext-runtime/intl — matching the ARM Cygwin bring-up. The gettext-tools
     # (msgfmt/xgettext) are not part of the seed and are not shipped here.
     #
-    # Keep the -msys host triple (do NOT apply the native -msys->-cygwin sed):
-    # the installed libtool already treats *-msys* as a Cygwin-family DLL
-    # platform (msys- DLL prefix), so a true aarch64-pc-msys target links.
+    # The host triple ends in -cygwin, so it matches libtool's stock cygwin*
+    # arms directly and the native -msys->-cygwin sed has nothing to do here.
+    # The msys- DLL prefix comes from the driver specs, not the triple.
     #
     # gt_cv_func_printf_posix=yes: cross default is wrong and would inject
     #   printf replacements into the libintl header.
     ./configure \
       --build=${CHOST} \
-      --host=aarch64-pc-msys \
+      --host=aarch64-pc-cygwin \
       --prefix=/usr \
       --with-included-libcroco \
       --with-included-libunistring \

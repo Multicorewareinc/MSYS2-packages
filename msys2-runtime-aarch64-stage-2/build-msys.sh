@@ -31,7 +31,7 @@ echo "===== NEWLIB BUILD DONE ====="
 # gcc private dir from the compiler -- do NOT hardcode "15"; the installed dir
 # may be "15.0.1", and the winsup compile's -isystem (derived the same way)
 # would not see a stub written to the wrong version dir.
-GCC_BASE="$(dirname "$(aarch64-pc-msys-gcc -print-libgcc-file-name)")"
+GCC_BASE="$(dirname "$(aarch64-pc-cygwin-gcc -print-libgcc-file-name)")"
 mkdir -p "${GCC_BASE}/include/c++/bits"
 cat > "${GCC_BASE}/include/c++/bits/c++config.h" << 'CXXCONFIG'
 #ifndef _GLIBCXX_CXX_CONFIG_H
@@ -81,7 +81,7 @@ cp -rf newlib-pkgbuild/pkg/ .
 cp -rf newlib-pkgbuild/src/ .
 
 rm -rf src/runtime-build
-cp -rf newlib-pkgbuild/src/runtime-build/aarch64-pc-msys/newlib  src/.
+cp -rf newlib-pkgbuild/src/runtime-build/aarch64-pc-cygwin/newlib  src/.
 
 makepkg -e
 

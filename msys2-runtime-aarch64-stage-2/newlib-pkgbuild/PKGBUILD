@@ -4,14 +4,14 @@ pkgbase=${_realname}
 pkgname=cross-msysarm64-newlib
 pkgver=3.6.7
 pkgrel=6
-pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-msys"
+pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-cygwin"
 arch=('x86_64')
 options=('!strip' '!buildflags')
 url="https://cygwin.com"
 license=('GPL')
 makedepends=(
-  "cross-msysarm64-gcc"               # full stage-2 gcc (provides aarch64-pc-msys-gcc, libgcc.a, crtbegin/end.o, libstdc++); stage1 is removed/superseded
-  "cross-msysarm64-binutils"          # provides: aarch64-pc-msys-ld, ar, etc.
+  "cross-msysarm64-gcc"               # full stage-2 gcc (provides aarch64-pc-cygwin-gcc, libgcc.a, crtbegin/end.o, libstdc++); stage1 is removed/superseded
+  "cross-msysarm64-binutils"          # provides: aarch64-pc-cygwin-ld, ar, etc.
   "cross-msysarm64-w32api-headers"    # provides: sysroot/include/w32api/*.h
   "cross-msysarm64-runtime-devel"     # provides: sysroot/include/ (newlib + cygwin headers)
   "mingw-w64-cross-mingwarm64-gcc"    # provides: aarch64-w64-mingw32-g++ for mingw helper
@@ -26,7 +26,7 @@ source=(
 )
 sha256sums=('SKIP')
 
-_target=aarch64-pc-msys
+_target=aarch64-pc-cygwin
 _build=x86_64-pc-msys
 
 prepare() {
@@ -55,36 +55,36 @@ prepare() {
 # void mainCRTStartup(void) {}
 # void wmainCRTStartup(void) {}
 # CEOF
-#   /usr/bin/aarch64-pc-msys-gcc -c /tmp/crt0_stub.c \
-#     -o /usr/aarch64-pc-msys/lib/crt0.o
+#   /usr/bin/aarch64-pc-cygwin-gcc -c /tmp/crt0_stub.c \
+#     -o /usr/aarch64-pc-cygwin/lib/crt0.o
 #   echo "crt0.o stub installed"
 
 #   # --- Stub: default-manifest.o ---
 #   # Needed by the linker for PE manifests, not part of cygwin1.dll itself.
-#   /usr/bin/aarch64-pc-msys-gcc -c /tmp/empty.c \
-#     -o /usr/aarch64-pc-msys/lib/default-manifest.o
+#   /usr/bin/aarch64-pc-cygwin-gcc -c /tmp/empty.c \
+#     -o /usr/aarch64-pc-cygwin/lib/default-manifest.o
 #   echo "default-manifest.o stub installed"
 
 #   # --- Stub: libcygwin.a ---
 #   # Circular dep: libcygwin.a IS what we're building.
 #   # Empty stub to allow linking during stage1 bootstrap.
-#   /usr/bin/aarch64-pc-msys-gcc -c /tmp/empty.c -o /tmp/empty.o
-#   /usr/bin/aarch64-pc-msys-ar rcs \
-#     /usr/aarch64-pc-msys/lib/libcygwin.a /tmp/empty.o
+#   /usr/bin/aarch64-pc-cygwin-gcc -c /tmp/empty.c -o /tmp/empty.o
+#   /usr/bin/aarch64-pc-cygwin-ar rcs \
+#     /usr/aarch64-pc-cygwin/lib/libcygwin.a /tmp/empty.o
 #   echo "libcygwin.a empty stub installed"
 
 #   # --- Real: crtbegin.o / crtend.o ---
 #   # These come from libgcc (cross-msysarm64-gcc-stage1), NOT stubs.
-#   cp /usr/lib/gcc/aarch64-pc-msys/15.0.1/crtbegin.o \
-#     /usr/aarch64-pc-msys/lib/crtbegin.o
-#   cp /usr/lib/gcc/aarch64-pc-msys/15.0.1/crtend.o \
-#     /usr/aarch64-pc-msys/lib/crtend.o
+#   cp /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/crtbegin.o \
+#     /usr/aarch64-pc-cygwin/lib/crtbegin.o
+#   cp /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/crtend.o \
+#     /usr/aarch64-pc-cygwin/lib/crtend.o
 #   echo "crtbegin.o / crtend.o from libgcc installed"
 
 #   # --- Real: libgcc.a ---
 #   # From cross-msysarm64-gcc-stage1. Copy to sysroot/lib for linker discovery.
-#   cp /usr/lib/gcc/aarch64-pc-msys/15.0.1/libgcc.a \
-#     /usr/aarch64-pc-msys/lib/libgcc.a
+#   cp /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/libgcc.a \
+#     /usr/aarch64-pc-cygwin/lib/libgcc.a
 #   echo "libgcc.a from gcc-stage1 installed"
 
   sed -i '1s/^/#pragma GCC optimize("O0")\n/' \
@@ -98,19 +98,19 @@ prepare() {
 
   # --- Real: Win32 import libs ---
   # From mingw-w64-cross-mingwarm64-crt (installed into /opt/aarch64-w64-mingw32/lib).
-  # winsup links them from the MSYS sysroot /usr/aarch64-pc-msys/lib. The full
+  # winsup links them from the MSYS sysroot /usr/aarch64-pc-cygwin/lib. The full
   # toolchain build's stage-1 runtime stages them there; build-test runs only
   # stage-2, so copy them here ourselves (same as stage-1). Idempotent.
   echo "--- Staging Win32 import libs from /opt/aarch64-w64-mingw32/lib ---"
   _ok=1
   for lib in kernel32 user32 advapi32 shell32 ntdll; do
-    if [ -f /usr/aarch64-pc-msys/lib/lib${lib}.a ]; then
+    if [ -f /usr/aarch64-pc-cygwin/lib/lib${lib}.a ]; then
       echo "  lib${lib}.a already present"
     elif [ -f /opt/aarch64-w64-mingw32/lib/lib${lib}.a ]; then
-      cp -f /opt/aarch64-w64-mingw32/lib/lib${lib}.a /usr/aarch64-pc-msys/lib/
+      cp -f /opt/aarch64-w64-mingw32/lib/lib${lib}.a /usr/aarch64-pc-cygwin/lib/
       echo "  lib${lib}.a staged from mingw sysroot"
     else
-      echo "  ERROR: lib${lib}.a not in /usr/aarch64-pc-msys/lib NOR /opt/aarch64-w64-mingw32/lib — is mingw-w64-cross-mingwarm64-crt installed?"
+      echo "  ERROR: lib${lib}.a not in /usr/aarch64-pc-cygwin/lib NOR /opt/aarch64-w64-mingw32/lib — is mingw-w64-cross-mingwarm64-crt installed?"
       _ok=0
     fi
   done
@@ -122,16 +122,16 @@ prepare() {
   # --- Stub: default-manifest.o ---
   # The linker auto-includes default-manifest.o (PE manifest, not part of the dll).
   # The full toolchain build's stage-1 runtime creates this empty stub in
-  # /usr/aarch64-pc-msys/lib/; build-test runs only stage-2 so it's absent ->
+  # /usr/aarch64-pc-cygwin/lib/; build-test runs only stage-2 so it's absent ->
   # winsup/cygserver link fails "cannot find default-manifest.o". Create it here.
   # NB: this MUST live in newlib-pkgbuild's prepare() — it is the ONLY prepare()
   # that runs under build-msys.sh (STEP 1 `makepkg -o`); STEP 2 uses `makepkg -e`
   # (--noextract), which SKIPS the root PKGBUILD's prepare(). It stages into the
   # shared sysroot, which persists to STEP 2's winsup link. Idempotent. (crt0.o is
   # NOT stubbed: the cross-msysarm64-runtime release ships the real one.)
-  if [ ! -f /usr/aarch64-pc-msys/lib/default-manifest.o ]; then
+  if [ ! -f /usr/aarch64-pc-cygwin/lib/default-manifest.o ]; then
     echo "" > /tmp/dm_empty.c
-    aarch64-pc-msys-gcc -c /tmp/dm_empty.c -o /usr/aarch64-pc-msys/lib/default-manifest.o \
+    aarch64-pc-cygwin-gcc -c /tmp/dm_empty.c -o /usr/aarch64-pc-cygwin/lib/default-manifest.o \
       && echo "default-manifest.o stub installed" \
       || echo "WARNING: failed to create default-manifest.o stub"
   fi
@@ -140,7 +140,7 @@ prepare() {
   # libstdc++ wrappers for C headers shadow newlib headers in the sysroot.
   # Remove them so winsup sees newlib's versions, not glibc-oriented wrappers.
   # for f in fenv.h stdlib.h alloca.h unistd.h; do
-  #   _wrapper="/usr/lib/gcc/aarch64-pc-msys/15.0.1/include/c++/${f}"
+  #   _wrapper="/usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include/c++/${f}"
   #   if [ -f "${_wrapper}" ] && [ ! -f "${_wrapper}.bak" ]; then
   #     mv "${_wrapper}" "${_wrapper}.bak"
   #     echo "Moved shadowing header: ${f}"
@@ -154,17 +154,17 @@ prepare() {
 
   # # newlib first (base layer)
   # cp -rf ${srcdir}/${_realname}/newlib/libc/include/. \
-  #   /usr/aarch64-pc-msys/sys-include/
+  #   /usr/aarch64-pc-cygwin/sys-include/
   cp -rf ${srcdir}/${_realname}/newlib/libc/include/* \
-    /usr/aarch64-pc-msys/include/
+    /usr/aarch64-pc-cygwin/include/
 
   # # cygwin headers second (override layer)
   # cp -rf ${srcdir}/${_realname}/winsup/cygwin/include/. \
-  #   /usr/aarch64-pc-msys/sys-include/
-  # mkdir -p /usr/aarch64-pc-msys/include/cygwin
+  #   /usr/aarch64-pc-cygwin/sys-include/
+  # mkdir -p /usr/aarch64-pc-cygwin/include/cygwin
 
   cp -r ${srcdir}/${_realname}/winsup/cygwin/include/* \
-        /usr/aarch64-pc-msys/include/
+        /usr/aarch64-pc-cygwin/include/
 
   # (w32api/ mirror no longer needed: cross-msysarm64-w32api-headers now installs
   # the Win32 headers under include/w32api/ via --enable-w32api.)
@@ -172,7 +172,7 @@ prepare() {
   # --- Verify aarch64-specific patches are present ---
   echo "--- Header patch verification ---"
   grep -c "__aarch64__" \
-    /usr/aarch64-pc-msys/sys-include/cygwin/signal.h && \
+    /usr/aarch64-pc-cygwin/sys-include/cygwin/signal.h && \
     echo "signal.h aarch64 patch OK" || \
     echo "ERROR: signal.h missing aarch64 — check mcw/aarch64-winsup-sync branch"
 
@@ -223,17 +223,17 @@ build() {
   # to the mingw sysroot copies -> "#error Only Win32 target is supported!".
   # `-print-libgcc-file-name` resolves to .../<ver>/libgcc.a; its dirname is the
   # correct private dir for whatever gcc is actually installed.
-  GCC_BASE="$(dirname "$(aarch64-pc-msys-gcc -print-libgcc-file-name)")"
+  GCC_BASE="$(dirname "$(aarch64-pc-cygwin-gcc -print-libgcc-file-name)")"
   [ -f "${GCC_BASE}/include/stddef.h" ] || {
     echo "FATAL: gcc include dir not found under ${GCC_BASE}/include (no stddef.h)"
-    echo "       aarch64-pc-msys-gcc -print-libgcc-file-name = $(aarch64-pc-msys-gcc -print-libgcc-file-name)"
+    echo "       aarch64-pc-cygwin-gcc -print-libgcc-file-name = $(aarch64-pc-cygwin-gcc -print-libgcc-file-name)"
     ls -la "${GCC_BASE}/include" 2>/dev/null | head
     exit 1
   }
   echo "GCC_BASE resolved to ${GCC_BASE} (stddef.h present)"
 
   # Sysroot-style include (merged newlib + cygwin)
-  SYSROOT_INC=/usr/aarch64-pc-msys/include
+  SYSROOT_INC=/usr/aarch64-pc-cygwin/include
 
   # Cross flags for the AARCH64 TARGET libraries (newlib/winsup) only. These
   # carry -nostdinc + the aarch64 cross-sysroot -isystem dirs. They must NOT
@@ -257,9 +257,9 @@ build() {
   unset CFLAGS CPPFLAGS
 
   # GCC_VER=15.0.1
-  # GCC_BASE=/usr/lib/gcc/aarch64-pc-msys/${GCC_VER}
+  # GCC_BASE=/usr/lib/gcc/aarch64-pc-cygwin/${GCC_VER}
 
-  # SYSROOT_INC=/home/mcw/headers/aarch64-pc-msys/include
+  # SYSROOT_INC=/home/mcw/headers/aarch64-pc-cygwin/include
 
   # export CFLAGS="\
   # -nostdinc \
@@ -294,20 +294,20 @@ build() {
     NM="nm" \
     OBJDUMP="objdump" \
     STRIP="strip" \
-    CC_FOR_TARGET="aarch64-pc-msys-gcc" \
-    CXX_FOR_TARGET="aarch64-pc-msys-g++" \
-    GCC_FOR_TARGET="aarch64-pc-msys-gcc" \
-    AR_FOR_TARGET="aarch64-pc-msys-ar" \
-    RANLIB_FOR_TARGET="aarch64-pc-msys-ranlib" \
-    NM_FOR_TARGET="aarch64-pc-msys-nm" \
-    OBJCOPY_FOR_TARGET="aarch64-pc-msys-objcopy" \
-    OBJDUMP_FOR_TARGET="aarch64-pc-msys-objdump" \
-    DLLTOOL_FOR_TARGET="aarch64-pc-msys-dlltool" \
-    WINDRES_FOR_TARGET="aarch64-pc-msys-windres" \
-    WINDMC_FOR_TARGET="aarch64-pc-msys-windmc" \
-    LD_FOR_TARGET="aarch64-pc-msys-ld" \
-    AS_FOR_TARGET="aarch64-pc-msys-as" \
-    STRIP_FOR_TARGET="aarch64-pc-msys-strip" \
+    CC_FOR_TARGET="aarch64-pc-cygwin-gcc" \
+    CXX_FOR_TARGET="aarch64-pc-cygwin-g++" \
+    GCC_FOR_TARGET="aarch64-pc-cygwin-gcc" \
+    AR_FOR_TARGET="aarch64-pc-cygwin-ar" \
+    RANLIB_FOR_TARGET="aarch64-pc-cygwin-ranlib" \
+    NM_FOR_TARGET="aarch64-pc-cygwin-nm" \
+    OBJCOPY_FOR_TARGET="aarch64-pc-cygwin-objcopy" \
+    OBJDUMP_FOR_TARGET="aarch64-pc-cygwin-objdump" \
+    DLLTOOL_FOR_TARGET="aarch64-pc-cygwin-dlltool" \
+    WINDRES_FOR_TARGET="aarch64-pc-cygwin-windres" \
+    WINDMC_FOR_TARGET="aarch64-pc-cygwin-windmc" \
+    LD_FOR_TARGET="aarch64-pc-cygwin-ld" \
+    AS_FOR_TARGET="aarch64-pc-cygwin-as" \
+    STRIP_FOR_TARGET="aarch64-pc-cygwin-strip" \
     MINGW_CXX=aarch64-w64-mingw32-g++ \
     MINGW_CC=aarch64-w64-mingw32-gcc  \
     CFLAGS="-O2 -pipe -D_MB_CAPABLE=1" \
@@ -323,7 +323,7 @@ build() {
 int main() { return 0; }
 EOF
 
-  ${CC:-aarch64-pc-msys-gcc} ${_target_cflags} mb_check.c -o mb_check || {
+  ${CC:-aarch64-pc-cygwin-gcc} ${_target_cflags} mb_check.c -o mb_check || {
     echo "❌ MB_CAPABLE check failed"
     exit 1
   }
@@ -346,18 +346,18 @@ EOF
 
 package() {
   # Cross package: ship the newlib C runtime libs into the SYSROOT
-  # (/usr/aarch64-pc-msys/lib), NOT the native /usr — these are aarch64 objects
-  # consumed by the aarch64-pc-msys cross compiler. `make DESTDIR install` is
+  # (/usr/aarch64-pc-cygwin/lib), NOT the native /usr — these are aarch64 objects
+  # consumed by the aarch64-pc-cygwin cross compiler. `make DESTDIR install` is
   # deliberately NOT used: it targets --prefix=/usr and would collide with the
   # host x86_64 MSYS2 runtime on the build/CI machine.
-  pkgdesc="newlib C runtime libs for the aarch64-pc-msys cross toolchain"
-  install -d "${pkgdir}/usr/aarch64-pc-msys/lib"
+  pkgdesc="newlib C runtime libs for the aarch64-pc-cygwin cross toolchain"
+  install -d "${pkgdir}/usr/aarch64-pc-cygwin/lib"
   local _l _s
   for _l in libc.a libm.a libg.a; do
     _s="$(find "${srcdir}/runtime-build" "${srcdir}" -name "${_l}" -path '*newlib*' 2>/dev/null | head -1)"
     [ -z "${_s}" ] && _s="$(find "${srcdir}/runtime-build" "${srcdir}" -name "${_l}" 2>/dev/null | head -1)"
     if [ -n "${_s}" ]; then
-      install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-msys/lib/${_l}"
+      install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-cygwin/lib/${_l}"
       echo "packaged ${_l} <- ${_s}"
     else
       echo "WARNING: newlib ${_l} not found in build tree"
