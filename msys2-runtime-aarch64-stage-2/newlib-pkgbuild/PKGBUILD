@@ -324,7 +324,10 @@ build() {
 int main() { return 0; }
 EOF
 
-  ${CC:-aarch64-pc-cygwin-gcc} ${_target_cflags} mb_check.c -o mb_check || {
+  # Compile only: the gate asks a preprocessor question, and linking would need
+  # -lmsys-2.0 (injected by the driver's LIB_SPEC) -- which is this build's own
+  # output, not yet in the sysroot.
+  ${CC:-aarch64-pc-cygwin-gcc} ${_target_cflags} -c mb_check.c -o mb_check.o || {
     echo "❌ MB_CAPABLE check failed"
     exit 1
   }

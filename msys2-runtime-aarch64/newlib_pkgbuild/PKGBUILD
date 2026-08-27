@@ -303,7 +303,10 @@ export CFLAGS="\
 int main() { return 0; }
 EOF
 
-  ${CC} ${CFLAGS} mb_check.c -o mb_check || {
+  # Compile only: the gate asks a preprocessor question, and linking would need
+  # -lmsys-2.0 (injected by the driver's LIB_SPEC) -- which is this build's own
+  # output, not yet in the sysroot.
+  ${CC} ${CFLAGS} -c mb_check.c -o mb_check.o || {
     echo "❌ MB_CAPABLE check failed"
     exit 1
   }
