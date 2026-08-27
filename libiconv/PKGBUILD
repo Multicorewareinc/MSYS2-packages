@@ -93,7 +93,7 @@ build() {
   cd ${srcdir}/${pkgname}-${pkgver}
 
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
-    # Cross-build for aarch64-pc-msys (see .ci/makepkg-aarch64-cross.conf).
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
     # Cross cache vars (target test programs can't run on the x64 host):
     #  - gl_cv_clean_version_stddef=yes: without it gnulib's generated stddef.h
     #    disables the __need_wint_t special-invocation path and newlib fails to
@@ -104,7 +104,7 @@ build() {
     #    -O2; build it at -O1 first, then let make build the rest at default -O.
     ./configure \
       --prefix=/usr \
-      --host=aarch64-pc-msys \
+      --host=aarch64-pc-cygwin \
       --build=${CHOST} \
       --without-libintl-prefix \
       --enable-static \

@@ -58,17 +58,17 @@ prepare() {
 build() {
   CFLAGS+=" -Wno-error=incompatible-pointer-types"
 
-  # Host triple + ncurses discovery for the aarch64-pc-msys cross build.
+  # Host triple + ncurses discovery for the aarch64-pc-cygwin cross build.
   # ncurses (the prior seed package) is staged under the toolchain sysroot at
-  # /usr/aarch64-pc-msys/usr, and its widechar headers live in .../include/ncursesw.
+  # /usr/aarch64-pc-cygwin/usr, and its widechar headers live in .../include/ncursesw.
   local _host=${CHOST}
   local _xcflags=""
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
-    _host=aarch64-pc-msys
+    _host=aarch64-pc-cygwin
     # GCC-15 is too new for readline's sources; -std=gnu89 per ARM bring-up.
-    _xcflags=" -std=gnu89 -I/usr/aarch64-pc-msys/usr/include/ncursesw"
+    _xcflags=" -std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include/ncursesw"
     CFLAGS+="${_xcflags}"
-    LDFLAGS+=" -L/usr/aarch64-pc-msys/usr/lib"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
   fi
 
   mkdir -p ${srcdir}/build-static-${MSYSTEM} && cd ${srcdir}/build-static-${MSYSTEM}

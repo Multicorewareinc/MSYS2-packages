@@ -63,9 +63,9 @@ build() {
   export gl_cv_have_weak=no
 
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
-    # Cross-build for aarch64-pc-msys (see .ci/makepkg-aarch64-cross.conf).
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
     # Links gmp/libiconv/libintl staged under the toolchain sysroot at
-    # /usr/aarch64-pc-msys/usr. GCC-15 too new for some gnulib TUs: -std=gnu17.
+    # /usr/aarch64-pc-cygwin/usr. GCC-15 too new for some gnulib TUs: -std=gnu17.
     # The gl_cv_* answers pin gnulib AC_TRY_RUN probes that can't run cross.
     #
     # -D_HAVE_LONG_DOUBLE: src/sort.c calls strtold(), which the sysroot HEADER
@@ -77,7 +77,7 @@ build() {
     #   _newlib_version.h. Remove once the sysroot ships a real newlib.h.
     ../${pkgname}-${pkgver}/configure \
       --build=${CHOST} \
-      --host=aarch64-pc-msys \
+      --host=aarch64-pc-cygwin \
       --prefix=/usr \
       --libexecdir=/usr/lib \
       --sysconfdir=/etc \
@@ -89,8 +89,8 @@ build() {
       --enable-no-install-program=uptime \
       gl_cv_func_strtod_works=yes \
       gl_cv_func_strtold_works=yes \
-      CFLAGS="-std=gnu17 -D_HAVE_LONG_DOUBLE -I/usr/aarch64-pc-msys/usr/include" \
-      LDFLAGS="${LDFLAGS} -L/usr/aarch64-pc-msys/usr/lib"
+      CFLAGS="-std=gnu17 -D_HAVE_LONG_DOUBLE -I/usr/aarch64-pc-cygwin/usr/include" \
+      LDFLAGS="${LDFLAGS} -L/usr/aarch64-pc-cygwin/usr/lib"
 
     # src/local.mk carries a maintainer rule that regenerates src/primes.h by
     # RUNNING src/make-prime-list$(EXEEXT) -- a binary this build links for
@@ -119,7 +119,7 @@ build() {
     # caps a recurrence at minutes. Remove once the toolchain ships a fixed cc1.
     local _to=45m _rc=0
     timeout --foreground -k 30s ${_to} make V=1 -j1 \
-      CC="aarch64-pc-msys-gcc -no-integrated-cpp -C" || _rc=$?
+      CC="aarch64-pc-cygwin-gcc -no-integrated-cpp -C" || _rc=$?
     if [[ ${_rc} -ne 0 ]]; then
       if [[ ${_rc} -eq 124 || ${_rc} -eq 137 ]]; then
         echo "==> STALLED: make exceeded ${_to} with no progress." >&2

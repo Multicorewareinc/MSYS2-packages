@@ -1,7 +1,7 @@
 # Maintainer: Windows on ARM Experiments
 
 _realname=binutils
-_target=aarch64-pc-msys
+_target=aarch64-pc-cygwin
 _host=x86_64-pc-msys
 pkgname="cross-msysarm64-${_realname}"
 pkgver=2.44dev
@@ -16,10 +16,8 @@ options=('staticlibs' '!distcc' '!ccache' '!buildflags')
 source=("${_realname}"::"git+https://github.com/Multicorewareinc/binutils-woarm64.git#branch=native-testing"
         0002-check-for-unusual-file-harder.patch
         0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch
-        9999-workarounds.patch
-        9998-aarch64-pc-msys-target.patch)
+        9999-workarounds.patch)
 sha256sums=('SKIP'
-            'SKIP'
             'SKIP'
             'SKIP'
             'SKIP')
@@ -36,12 +34,10 @@ prepare() {
   # apply_patch_with_msg \
   #   0002-check-for-unusual-file-harder.patch \
   #   0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch \
-  #   9999-workarounds.patch \
-  #   9998-aarch64-pc-msys-target.patch
+  #   9999-workarounds.patch
     git apply --whitespace=fix \
     "${srcdir}"/0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch \
-    "${srcdir}"/9999-workarounds.patch \
-    "${srcdir}"/9998-aarch64-pc-msys-target.patch
+    "${srcdir}"/9999-workarounds.patch
 }
 
 build() {

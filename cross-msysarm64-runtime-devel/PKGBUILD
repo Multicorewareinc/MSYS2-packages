@@ -4,7 +4,7 @@ _realname=msys2-runtime
 pkgname="cross-msysarm64-runtime-devel"
 pkgver=3.6.7
 pkgrel=4
-pkgdesc="Cross msys2-runtime headers for aarch64-pc-msys sysroot (newlib + cygwin)"
+pkgdesc="Cross msys2-runtime headers for aarch64-pc-cygwin sysroot (newlib + cygwin)"
 arch=('x86_64')
 url="https://cygwin.com"
 license=('GPL')
@@ -17,10 +17,10 @@ source=(
 )
 sha256sums=('SKIP')
 
-_target=aarch64-pc-msys
+_target=aarch64-pc-cygwin
 _sysroot=/usr/${_target}
 
-# Header supplying the utsname layout for the aarch64-pc-msys sysroot.
+# Header supplying the utsname layout for the aarch64-pc-cygwin sysroot.
 _utsname_hdr="winsup/cygwin/include/sys/utsname.h"
 
 prepare() {

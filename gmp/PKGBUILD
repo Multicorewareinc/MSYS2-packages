@@ -42,13 +42,13 @@ build() {
   cd "${srcdir}/${pkgname}-${pkgver}"
 
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
-    # Cross-build for aarch64-pc-msys (see .ci/makepkg-aarch64-cross.conf).
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
     # --disable-fat: fat binaries select an x86 CPU variant at runtime; on
     #   aarch64 gmp uses its own arch dispatch, so fat is meaningless/harmful.
     CFLAGS+=" -Wno-attributes" \
     CXXFLAGS+=" -Wno-attributes" \
     ./configure \
-      --host=aarch64-pc-msys \
+      --host=aarch64-pc-cygwin \
       --build=${CHOST} \
       --prefix=/usr \
       --enable-cxx \
