@@ -4,9 +4,9 @@ _realname=gcc
 _target=aarch64-pc-cygwin
 pkgname="cross-msysarm64-${_realname}-stage1"
 provides=("cross-msysarm64-${_realname}")
-_realver=15.0.1
-pkgver=15.0.1dev
-pkgrel=9
+_realver=17.0.0
+pkgver=17.0.0dev
+pkgrel=1
 pkgdesc="Cross GCC for aarch64-pc-cygwin (stage1)"
 arch=('i686' 'x86_64')
 url="https://gcc.gnu.org"
@@ -29,7 +29,7 @@ makedepends=(
 )
 options=('!strip' 'staticlibs' '!emptydirs' '!buildflags')
 source=(
-  "${_realname}::git+https://github.com/Windows-on-ARM-Experiments/gcc-woarm64.git#branch=fix-va-list"
+  "${_realname}::git+https://github.com/Multicorewareinc/gcc-woarm64.git#branch=aarch64-on-latest"
   0012-Handle-spaces-in-path-for-default-manifest.patch
   0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch
   0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch

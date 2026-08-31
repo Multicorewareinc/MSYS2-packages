@@ -24,7 +24,7 @@ diff --git a/gcc/config.gcc b/gcc/config.gcc
 +	tm_file="${tm_file} aarch64/msys.h"
  	xm_file=i386/xm-cygwin.h
  	tmake_file="${tmake_file} aarch64/t-aarch64"
- 	tmake_file="${tmake_file} mingw/t-cygming t-slibgcc"
+ 	tmake_file="${tmake_file} aarch64/t-aarch64-mingw"
 diff --git a/gcc/config/aarch64/msys.h b/gcc/config/aarch64/msys.h
 new file mode 100644
 index 00000000000..04cd4618301
