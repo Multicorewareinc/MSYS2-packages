@@ -15,7 +15,7 @@ copy of this patch, once a runtime exists to link against.
 diff --git a/gcc/config.gcc b/gcc/config.gcc
 --- a/gcc/config.gcc
 +++ b/gcc/config.gcc
-@@ -1285,6 +1285,10 @@ aarch64-*-cygwin*)
+@@ -1285,6 +1285,9 @@ aarch64-*-cygwin*)
  	tm_file="${tm_file} i386/cygwin-stdint.h"
  	tm_file="${tm_file} mingw/winnt.h"
  	tm_file="${tm_file} mingw/winnt-dll.h"
