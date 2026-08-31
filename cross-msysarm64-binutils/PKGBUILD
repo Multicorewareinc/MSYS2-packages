@@ -4,8 +4,8 @@ _realname=binutils
 _target=aarch64-pc-cygwin
 _host=x86_64-pc-msys
 pkgname="cross-msysarm64-${_realname}"
-pkgver=2.44dev
-pkgrel=2
+pkgver=2.47.50
+pkgrel=1
 pkgdesc="Cross binutils for target ${_target}"
 arch=('i686' 'x86_64')
 url="https://www.gnu.org/software/binutils/"
@@ -13,7 +13,7 @@ license=('GPL')
 depends=("libiconv" "zlib" "libzstd" "libintl")
 makedepends=("libiconv-devel" "zlib-devel" 'autotools' 'gcc' 'libzstd-devel' 'gettext-devel' 'git' 'gmp-devel' 'mpfr-devel')
 options=('staticlibs' '!distcc' '!ccache' '!buildflags')
-source=("${_realname}"::"git+https://github.com/Multicorewareinc/binutils-woarm64.git#branch=native-testing"
+source=("${_realname}"::"git+https://github.com/Multicorewareinc/binutils-woarm64.git#branch=aarch64-on-latest"
         0002-check-for-unusual-file-harder.patch
         0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch
         9999-workarounds.patch)
@@ -35,9 +35,14 @@ prepare() {
   #   0002-check-for-unusual-file-harder.patch \
   #   0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch \
   #   9999-workarounds.patch
-    git apply --whitespace=fix \
-    "${srcdir}"/0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch \
-    "${srcdir}"/9999-workarounds.patch
+  # No patches on the aarch64-on-latest base (upstream 2.47.50):
+  #   9999-workarounds.patch  readline/tcap.h already has the real prototypes
+  #                           upstream, so the patch is effectively already in.
+  #   0010-..._max_nscns      its bfd/coffcode.h literal is gone upstream and its
+  #                           other targets (rs6000/alpha/mips/sh) are not built
+  #                           here; large section counts on aarch64 are handled
+  #                           by upstream bigobj (aarch64_pe_bigobj_le_vec).
+  :
 }
 
 build() {
