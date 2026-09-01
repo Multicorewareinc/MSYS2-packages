@@ -30,6 +30,10 @@ sha256sums=('SKIP')
 _target=aarch64-pc-cygwin
 _build=x86_64-pc-msys
 
+# Derive the gcc version dir from the compiler: it changes between gcc
+# releases (15.0.1 -> 17) and a stale hardcoded path silently breaks the
+# -nostdinc include set and the crt*.o copies.
+GCC_BASE="$(dirname "$(aarch64-pc-cygwin-gcc -print-libgcc-file-name)")"
 prepare() {
   # -------------------------------------------------------------------------
   # BOOTSTRAP STUBS
@@ -110,7 +114,7 @@ prepare() {
   # libstdc++ wrappers for C headers shadow newlib headers in the sysroot.
   # Remove them so winsup sees newlib's versions, not glibc-oriented wrappers.
   for f in fenv.h stdlib.h alloca.h unistd.h; do
-    _wrapper="/usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include/c++/${f}"
+    _wrapper="${GCC_BASE}/include/c++/${f}"
     if [ -f "${_wrapper}" ] && [ ! -f "${_wrapper}.bak" ]; then
       mv "${_wrapper}" "${_wrapper}.bak"
       echo "Moved shadowing header: ${f}"
@@ -218,7 +222,7 @@ build() {
   -isystem ${HOME}/headers/aarch64-pc-cygwin/include \
   -isystem /usr/aarch64-pc-cygwin/include \
   -isystem /usr/aarch64-pc-cygwin/include/w32api \
-  -O1 -pipe"
+  -O1 -pipe -Wno-error"
 
   export CXXFLAGS="\
   -nostdinc \
@@ -227,14 +231,82 @@ build() {
   -isystem ${GCC_BASE}/include \
   -isystem ${GCC_BASE}/include-fixed \
   -isystem ${GCC_BASE}/include/c++ \
+  -isystem ${GCC_BASE}/include/c++/aarch64-pc-cygwin \
   -isystem ${GCC_BASE}/include/c++/backward \
   -isystem ${HOME}/headers/aarch64-pc-cygwin/include \
   -isystem /usr/aarch64-pc-cygwin/include \
   -isystem /usr/aarch64-pc-cygwin/include/w32api \
-  -O1 -pipe"
+  -O1 -pipe -Wno-error -std=gnu++17"
   export ac_cv_lib_sframe_sframe_decode=no
   export ac_cv_lib_zstd_ZSTD_isError=no
   CXXFLAGS_FOR_TARGET="-Wno-error -Wno-narrowing" \
+  # AArch64 __try/__except: TRY_HANDLER_DATA ended its inline asm with a bare
+  # ".text" instead of ".seh_code".  That dates from a gas with no .seh_code;
+  # upstream binutils (17afc47d8bc) added it.  They are not equivalent:
+  # .seh_code returns to the recorded code_seg, ".text" lands in the generic
+  # .text section.  Under -ffunction-sections that is the wrong section, gas
+  # reports "used in segment '.text' instead of expected '.text$fn'", the
+  # handler data is not attached.  (This is necessary but NOT sufficient: it
+  # does not by itself fix the EFAULT tests - see the myfault patch below.)
+  _ct="${srcdir}/${_realname}/winsup/cygwin/local_includes/cygtls.h"
+  sed -i 's|"  \.text |"  .seh_code |' "${_ct}"
+  if ! grep -q "seh_code" "${_ct}"; then
+    echo "FATAL: cygtls.h .seh_code patch did not apply" >&2; return 1
+  fi
+  echo "aarch64 TRY_HANDLER_DATA uses .seh_code ($(grep -c seh_code "${_ct}") sites)"
+
+  # AArch64 __try/__except part 2 - the one that actually fixes the EFAULT
+  # tests (access03 mkdir01 rmdir05 stat03 times02 ...).
+  #
+  # exception::myfault reads the SCOPE_TABLE straight from
+  # dispatch->HandlerData.  That is right on x86_64, where gas puts the
+  # .seh_handlerdata payload inline directly after the exception handler RVA.
+  # On AArch64 gas emits a two word preamble there instead, and the payload
+  # lives elsewhere:
+  #
+  #     +0: exception handler RVA     <- RtlVirtualUnwind stops here
+  #     +4: 0                         <- HandlerData points here
+  #     +8: RVA of the scope table
+  #     +c: ULONG Count, SCOPE_TABLE records ...
+  #
+  # so myfault read Count == 0 and a garbage JumpTarget, and RtlUnwindEx
+  # resumed in the wrong place.  Every __except (EFAULT) block was silently
+  # skipped: a fault on a bad path argument fell through to the "empty path"
+  # branch of path_conv::check and surfaced as ENOENT instead of EFAULT.
+  # Verified against the linked image - HandlerData + 8 == ImageBase + the RVA
+  # at HandlerData + 4 - so follow the indirection rather than adding a fixed
+  # offset, and this stays correct if the preamble ever changes size.
+  _exc="${srcdir}/${_realname}/winsup/cygwin/exceptions.cc"
+  sed -i '/void [*]jump_target = ((char [*]) dispatch->ImageBase)/i\
+#ifdef __aarch64__\
+  /* gas puts .seh_handlerdata behind an RVA on AArch64; see PKGBUILD. */\
+  ULONG *handler_data = (ULONG *) dispatch->HandlerData;\
+  table = (PSCOPE_TABLE) ((char *) dispatch->ImageBase + handler_data[1]);\
+#endif' "${_exc}"
+  if ! grep -q "handler_data\[1\]" "${_exc}"; then
+    echo "FATAL: exceptions.cc myfault scope-table patch did not apply" >&2
+    return 1
+  fi
+  echo "aarch64 myfault follows the .seh_handlerdata indirection"
+
+  # winsup links the DLL against $(newlib_build)/lib{m,c,g}.a AND references
+  # object files directly, e.g. libssp.a depends on
+  #   $(wildcard $(newlib_build)/libc/ssp/*.o)
+  # so copy the whole newlib BUILD tree, not just the archives.  It must be the
+  # build tree, not the sysroot: cross-msysarm64-runtime overwrites the sysroot
+  # libc.a with the DLL IMPORT library (t-msys_2_0_dll_*.o thunks), and linking
+  # the DLL against its own import stubs fails with thousands of __imp_ refs.
+  _nlbuild="${startdir}/newlib-pkgbuild/src/runtime-build/${_target}/newlib"
+  if [ ! -d "${_nlbuild}" ]; then
+    echo "FATAL: newlib build tree not found at ${_nlbuild}" >&2; return 1
+  fi
+  if aarch64-pc-cygwin-ar t "${_nlbuild}/libc.a" 2>/dev/null | grep -q "t-msys_2_0_dll"; then
+    echo "FATAL: ${_nlbuild}/libc.a is an import library, not static newlib" >&2; return 1
+  fi
+  mkdir -p "${srcdir}/newlib"
+  cp -a "${_nlbuild}/." "${srcdir}/newlib/"
+  echo "staged newlib build tree: $(ls "${srcdir}"/newlib/*.a | wc -l) archives, $(ls "${srcdir}"/newlib/libc/ssp/*.o 2>/dev/null | wc -l) ssp objects"
+
   ${srcdir}/${_realname}/winsup/configure \
     --prefix=/usr \
     --build=${_build} \
@@ -347,6 +419,7 @@ aarch64-pc-cygwin-g++ -DHAVE_CONFIG_H \
 -isystem ${GCC_BASE}/include \
 -isystem ${GCC_BASE}/include-fixed \
 -isystem ${GCC_BASE}/include/c++ \
+  -isystem ${GCC_BASE}/include/c++/aarch64-pc-cygwin \
 -isystem ${GCC_BASE}/include/c++/backward \
 -isystem ${HOME}/headers/aarch64-pc-cygwin/include \
 -isystem /usr/aarch64-pc-cygwin/include \

@@ -35,6 +35,10 @@ sha256sums=('SKIP')
 _target=aarch64-pc-cygwin
 _build=x86_64-pc-msys
 
+# Derive the gcc version dir from the compiler: it changes between gcc
+# releases (15.0.1 -> 17) and a stale hardcoded path silently breaks the
+# -nostdinc include set and the crt*.o copies.
+GCC_BASE="$(dirname "$(aarch64-pc-cygwin-gcc -print-libgcc-file-name)")"
 prepare() {
   # -------------------------------------------------------------------------
   # BOOTSTRAP STUBS
@@ -87,15 +91,15 @@ CEOF
 
   # --- Real: crtbegin.o / crtend.o ---
   # These come from libgcc (cross-msysarm64-gcc-stage1), NOT stubs.
-  cp /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/crtbegin.o \
+  cp ${GCC_BASE}/crtbegin.o \
     /usr/aarch64-pc-cygwin/lib/crtbegin.o
-  cp /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/crtend.o \
+  cp ${GCC_BASE}/crtend.o \
     /usr/aarch64-pc-cygwin/lib/crtend.o
   echo "crtbegin.o / crtend.o from libgcc installed"
 
   # --- Real: libgcc.a ---
   # From cross-msysarm64-gcc-stage1. Copy to sysroot/lib for linker discovery.
-  cp /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/libgcc.a \
+  cp ${GCC_BASE}/libgcc.a \
     /usr/aarch64-pc-cygwin/lib/libgcc.a
   echo "libgcc.a from gcc-stage1 installed"
 
@@ -132,7 +136,7 @@ CEOF
   # libstdc++ wrappers for C headers shadow newlib headers in the sysroot.
   # Remove them so winsup sees newlib's versions, not glibc-oriented wrappers.
   for f in fenv.h stdlib.h alloca.h unistd.h; do
-    _wrapper="/usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include/c++/${f}"
+    _wrapper="${GCC_BASE}/include/c++/${f}"
     if [ -f "${_wrapper}" ] && [ ! -f "${_wrapper}.bak" ]; then
       mv "${_wrapper}" "${_wrapper}.bak"
       echo "Moved shadowing header: ${f}"
@@ -222,28 +226,47 @@ build() {
   export CFLAGS="\
   -nostdinc \
   -D_MB_CAPABLE=1 \
-  -isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include \
-  -isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include-fixed \
+  -isystem ${GCC_BASE}/include \
+  -isystem ${GCC_BASE}/include-fixed \
   -isystem ${HOME}/headers/aarch64-pc-cygwin/include \
   -isystem /usr/aarch64-pc-cygwin/include \
   -isystem /usr/aarch64-pc-cygwin/include/w32api \
-  -O1 -pipe"
+  -O1 -pipe -Wno-error"
 
   export CXXFLAGS="\
   -nostdinc \
   -nostdinc++ \
   -D_MB_CAPABLE=1 \
-  -isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include \
-  -isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include-fixed \
-  -isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include/c++ \
-  -isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include/c++/backward \
+  -isystem ${GCC_BASE}/include \
+  -isystem ${GCC_BASE}/include-fixed \
+  -isystem ${GCC_BASE}/include/c++ \
+  -isystem ${GCC_BASE}/include/c++/aarch64-pc-cygwin \
+  -isystem ${GCC_BASE}/include/c++/backward \
   -isystem ${HOME}/headers/aarch64-pc-cygwin/include \
   -isystem /usr/aarch64-pc-cygwin/include \
   -isystem /usr/aarch64-pc-cygwin/include/w32api \
-  -O1 -pipe"
+  -O1 -pipe -Wno-error -std=gnu++17"
   export ac_cv_lib_sframe_sframe_decode=no
   export ac_cv_lib_zstd_ZSTD_isError=no
   CXXFLAGS_FOR_TARGET="-Wno-error -Wno-narrowing" \
+  # winsup links the DLL against $(newlib_build)/lib{m,c,g}.a AND references
+  # object files directly, e.g. libssp.a depends on
+  #   $(wildcard $(newlib_build)/libc/ssp/*.o)
+  # so copy the whole newlib BUILD tree, not just the archives.  It must be the
+  # build tree, not the sysroot: cross-msysarm64-runtime overwrites the sysroot
+  # libc.a with the DLL IMPORT library (t-msys_2_0_dll_*.o thunks), and linking
+  # the DLL against its own import stubs fails with thousands of __imp_ refs.
+  _nlbuild="${startdir}/newlib-pkgbuild/src/runtime-build/${_target}/newlib"
+  if [ ! -d "${_nlbuild}" ]; then
+    echo "FATAL: newlib build tree not found at ${_nlbuild}" >&2; return 1
+  fi
+  if aarch64-pc-cygwin-ar t "${_nlbuild}/libc.a" 2>/dev/null | grep -q "t-msys_2_0_dll"; then
+    echo "FATAL: ${_nlbuild}/libc.a is an import library, not static newlib" >&2; return 1
+  fi
+  mkdir -p "${srcdir}/newlib"
+  cp -a "${_nlbuild}/." "${srcdir}/newlib/"
+  echo "staged newlib build tree: $(ls "${srcdir}"/newlib/*.a | wc -l) archives, $(ls "${srcdir}"/newlib/libc/ssp/*.o 2>/dev/null | wc -l) ssp objects"
+
   ${srcdir}/${_realname}/winsup/configure \
     --prefix=/usr \
     --build=${_build} \
@@ -335,10 +358,11 @@ aarch64-pc-cygwin-g++ -DHAVE_CONFIG_H \
 -fno-threadsafe-statics \
 -nostdinc -nostdinc++ \
 -D_MB_CAPABLE=1 \
--isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include \
--isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include-fixed \
--isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include/c++ \
--isystem /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include/c++/backward \
+-isystem ${GCC_BASE}/include \
+-isystem ${GCC_BASE}/include-fixed \
+-isystem ${GCC_BASE}/include/c++ \
+  -isystem ${GCC_BASE}/include/c++/aarch64-pc-cygwin \
+-isystem ${GCC_BASE}/include/c++/backward \
 -isystem ${HOME}/headers/aarch64-pc-cygwin/include \
 -isystem /usr/aarch64-pc-cygwin/include \
 -isystem /usr/aarch64-pc-cygwin/include/w32api \

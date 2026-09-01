@@ -3,8 +3,8 @@
 _realname=gcc
 _target=aarch64-pc-cygwin
 pkgname="cross-msysarm64-${_realname}"
-pkgver=15.0.1
-pkgrel=3
+pkgver=17.0.0
+pkgrel=1
 pkgdesc="Cross GCC stage2 for aarch64-pc-cygwin (with full runtime)"
 arch=('i686' 'x86_64')
 url="https://gcc.gnu.org"
@@ -28,7 +28,7 @@ makedepends=(
 )
 options=('!strip' 'staticlibs' '!emptydirs' '!buildflags')
 source=(
-  "${_realname}::git+https://github.com/Windows-on-ARM-Experiments/gcc-woarm64.git#branch=fix-va-list"
+  "${_realname}::git+https://github.com/Multicorewareinc/gcc-woarm64.git#branch=aarch64-on-latest"
   0012-Handle-spaces-in-path-for-default-manifest.patch
   0014-gcc-9-branch-clone_function_name_1-Retain-any-stdcall-suffix.patch
   0020-libgomp-Don-t-hard-code-MS-printf-attributes.patch
@@ -199,8 +199,11 @@ prepare() {
     return 1
   fi
   # The patch is additive: it must not have replaced any cygwin* label.
-  if [ "${_ncyg}" -lt 31 ]; then
-    echo "==> ERROR: cygwin* arms dropped to ${_ncyg} (expected 31) -- 9997" >&2
+  # Baseline is 30 on both gcc 15 and gcc 17 upstream; 9997 leaves it untouched
+  # (verified: cygwin* 30 -> 30, msys* 0 -> 18).  The old constant of 31 never
+  # matched an unpatched tree.
+  if [ "${_ncyg}" -lt 30 ]; then
+    echo "==> ERROR: cygwin* arms dropped to ${_ncyg} (expected 30) -- 9997" >&2
     echo "    replaced rather than added labels." >&2
     return 1
   fi
@@ -209,6 +212,17 @@ prepare() {
     return 1
   fi
   echo "==> ok: msys* present on the dynamic_linker arm; enable_shared will be yes"
+
+  # The C++23 "std" module hangs cc1plus for this cross target: the compile
+  # never returns, make/libtool retry it, and the build wedges with a pile of
+  # stuck xgcc processes.  The upstream rule falls back to empty.cc when the
+  # module fails to COMPILE, but a hang never reaches that branch, so take the
+  # fallback unconditionally.  The module is not needed to build the runtime.
+  for _mf in "${srcdir}/${_realname}"/libstdc++-v3/src/c++23/Makefile.am "${srcdir}/${_realname}"/libstdc++-v3/src/c++23/Makefile.in; do
+    [ -f "${_mf}" ] || continue
+    sed -i 's|MODULES_FLAGS) -c $< ; then|MODULES_FLAGS) -c empty.cc -o $@ ; then|' "${_mf}"
+  done
+  echo "==> C++23 std module replaced with empty.cc (hangs on this target)"
 }
 
 build() {
@@ -280,9 +294,9 @@ build() {
   #     This removes the need for the old Fix-2 (ar-merging EH objects into
   #     libgcc.a) and Fix-3 (appending libkernel32.a to the libstdc++ libtool
   #     postdeps). prepare() gates that the patch actually applied.
-  make all-target-libgcc
-  make all-target-libstdc++-v3
-  make all-target-libgomp   || echo "WARNING: libgomp failed"
+  make LDFLAGS_FOR_TARGET="-L/usr/${_target}/lib" all-target-libgcc
+  make LDFLAGS_FOR_TARGET="-L/usr/${_target}/lib" all-target-libstdc++-v3
+  make LDFLAGS_FOR_TARGET="-L/usr/${_target}/lib" all-target-libgomp   || echo "WARNING: libgomp failed"
 }
 package() {
  cd ${srcdir}/gcc-build
