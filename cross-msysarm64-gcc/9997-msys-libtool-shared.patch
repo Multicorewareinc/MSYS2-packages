@@ -2,29 +2,42 @@ From: Windows on ARM Experiments <woarm64@qti.qualcomm.com>
 Subject: [PATCH] gcc/configure: recognise msys* as a shared-library (PE/Win32)
  host alongside cygwin*
 
-The cross toolchain is configured --build/--host=x86_64-pc-msys with
---target=aarch64-pc-cygwin, so host_os is "msys" regardless of the target
-triple. Stock gcc/configure only teaches libtool that
-"cygwin* | mingw* | pw32* | cegcc*" hosts can build shared libraries, so
-host_os=msys falls through the dynamic-linker case to the default arm:
+The cross toolchain is configured with --build/--host=x86_64-pc-msys and
+--target=aarch64-pc-cygwin. The retarget of the TARGET triple to
+aarch64-pc-cygwin does not change host_os, which remains "msys".
+
+The generated gcc/configure only teaches libtool that
+"cygwin* | mingw* | pw32* | cegcc*" hosts can build shared libraries. host_os
+"msys" matches none of those 31 arms, so it falls through the dynamic-linker
+case to the default arm:
 
     *)
       dynamic_linker=no
 
 and then, in order:
 
-    test "$dynamic_linker" = no && can_build_shared=no
-    test "$can_build_shared" = "no" && enable_shared=no
+    test "$dynamic_linker" = no && can_build_shared=no      # gcc/configure
+    test "$can_build_shared" = "no" && enable_shared=no     # gcc/configure
 
 gcc/Makefile.in gates the driver's -DENABLE_SHARED_LIBGCC on @enable_shared@,
 so the driver is compiled without it, SHARED_LIBGCC_SPEC collapses to a bare
 "-lgcc", and the driver never emits -lgcc_s. The SEH exception unwinder
 (_Unwind_*, __gcc_personality_seh0) then lives only in libgcc_eh.a and the
-shared DLL, and libstdc++ fails to link with undefined _Unwind_Resume.
+shared cyggcc_s-seh-1.dll, and libstdc++ fails to link with 34 undefined
+references to _Unwind_Resume.
 
-This ADDS msys* to the relevant host_os arms rather than replacing cygwin*:
-all 31 cygwin* arms are preserved, so Cygwin hosts are unaffected, and only
-the 18 arms that gate PE/Win32 shared-library support gain an msys* label.
+This patch ADDS msys* to the relevant host_os arms rather than replacing
+cygwin* (which is what the older 9997-msys-libtool-shared.patch did). All 31
+cygwin* arms are preserved, so Cygwin hosts are unaffected; only the 18 arms
+that gate PE/Win32 shared-library support gain an msys* label.
+
+Verified by extracting the dynamic-linker case block and executing it:
+
+    host_os        before              after
+    msys           no                  Win32 ld.exe
+    cygwin         Win32 ld.exe        Win32 ld.exe
+    mingw32        Win32 ld.exe        Win32 ld.exe
+    linux-gnu      GNU/Linux ld.so     GNU/Linux ld.so
 
 --- a/gcc/configure
 +++ b/gcc/configure

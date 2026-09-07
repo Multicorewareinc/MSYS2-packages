@@ -2,7 +2,7 @@
 
 _realname=msys2-runtime
 pkgbase=${_realname}
-# Collision-free cross pkgname: never the host names
+# Collision-free cross pkgname (issue #14): never the host names
 # msys2-runtime / msys2-runtime-devel. This stage-1 winsup recipe is
 # bootstrap-only (package_*() below stay commented out — the shippable runtime
 # is stage-2's cross-msysarm64-runtime); the rename keeps the pkgname-lint green
@@ -28,7 +28,7 @@ makedepends=(
   "autotools"
 )
 source=(
-  "${_realname}::git+https://github.com/mayankag-qti/msys2-runtime-arm64#branch=arm64/qcom-runtime"
+  "${_realname}::git+https://github.com/qcom-eng-691/msys2-runtime#branch=qualcomm/aarch64-port"
 )
 sha256sums=('SKIP')
 
@@ -65,17 +65,8 @@ CEOF
     -o /usr/aarch64-pc-cygwin/lib/crt0.o
   echo "crt0.o stub installed"
 
-  # --- default-manifest.o: NOT stubbed ---
-  # The old stub wrote an EMPTY object into the live sysroot and never into
-  # ${pkgdir}, so it shipped in no package -- every non-shared link against the
-  # published toolchain then failed with "ld: cannot find default-manifest.o",
-  # while in-tree builds stayed green because this line pre-placed the file and
-  # masked the gap. Being empty it also embedded no manifest resource.
-  #
-  # The real object now comes from cross-msysarm64-windows-default-manifest, and
-  # this prepare() runs after that package is built, so re-stubbing would clobber
-  # it. Unlike crt0.o and libcygwin.a below, it is not a circular dependency of
-  # this package and never belonged in this list.
+  # default-manifest.o is built/packaged by cross-msysarm64-windows-default-manifest (step 12);
+  # do NOT re-stub it here (steps 14/16 run later and would clobber it with an empty object).
 
   # --- Stub: libcygwin.a ---
   # Circular dep: libcygwin.a IS what we're building.
@@ -99,7 +90,7 @@ CEOF
     /usr/aarch64-pc-cygwin/lib/libgcc.a
   echo "libgcc.a from gcc-stage1 installed"
 
-  # devices.cc: the old #pragma GCC optimize("O0") hack was removed.
+  # devices.cc: the old #pragma GCC optimize("O0") hack was removed (issue #5).
   # At the build's -O1 it compiles cleanly (the ldp_fusion SIGSEGV is -O2-only);
   # the per-object make rule below adds -mno-early-ldp-fusion so it also stays
   # safe if the tree is ever moved to -O2.
@@ -198,7 +189,7 @@ build() {
   which aarch64-w64-mingw32-g++ || \
     echo "WARNING: mingw aarch64 g++ not found"
 
-  # NOTE: the old "strip long-double libm files" step here was
+  # Note: the old "strip long-double libm files" step here was
   # a `find newlib/libm -name Makefile.am | sed -d ...` loop. It was DEAD CODE:
   # this newlib uses non-recursive automake, so there are NO Makefile.am files
   # under newlib/libm/ (a single top-level newlib/Makefile.am includes the
@@ -275,18 +266,18 @@ sed -i '/-mno-use-libstdc-wrappers/d' cygwin/Makefile
 cat >> cygwin/Makefile << 'EOF'
 
 # GCC-15 AArch64 per-file workarounds — keep the build's -O1; NO -O0 drops.
-# Root causes:
+# Root causes (bisected on the pkgrel-2 cross toolchain, 2026-07-12):
 #  devices.o           : SIGSEGV in RTL pass ldp_fusion at -O2 (harmless no-op at -O1)
 #                        -> -mno-early-ldp-fusion
 #  fhandler/netdrive.o : GCC-15 -Wmisleading-indentation whole-file scan hangs forever
 #                        (optimizer is fine) -> -Wno-misleading-indentation (keeps -O1 -Wall -Werror)
 #  libc/minires-os-if.o: GCC-15 cc1 INTEGRATED-preprocessor segfault on the deep macro-dense
-#                        <iphlpapi.h> -> ole2.h -> rpcndr.h header chain. The same TU compiles
-#                        clean when preprocessed to a .i and fed with -fpreprocessed, and clean
-#                        with a SEPARATE cpp pass, so the bug is in cc1's lex-while-parse path,
-#                        NOT the optimizer (crashes at -O0 too), GC, --enable-checking, or stack
-#                        size. Fix = run a separate cpp pass for this one C TU. Restores the
-#                        Windows DNS resolver backend on AArch64.
+#                        <iphlpapi.h> -> ole2.h -> rpcndr.h header chain (issue #79 / toolchain #7).
+#                        Bisected 2026-07-27: the same TU compiles clean when preprocessed to a .i
+#                        and fed with -fpreprocessed, and clean with a SEPARATE cpp pass, so the bug
+#                        is in cc1's lex-while-parse path, NOT the optimizer (crashes at -O0 too),
+#                        GC, --enable-checking, or stack size. Fix = run a separate cpp pass for this
+#                        one C TU. Restores the Windows DNS resolver backend on AArch64.
 devices.o: CXXFLAGS += -mno-early-ldp-fusion
 fhandler/netdrive.o: CXXFLAGS += -Wno-misleading-indentation
 libc/minires-os-if.o: CFLAGS += -no-integrated-cpp
@@ -297,7 +288,7 @@ EOF
 # (cross-msysarm64-w32api-runtime, or a prior pacman -U, put them there). Only fall
 # back to copying from the mingw sysroot /opt/aarch64-w64-mingw32/lib/ when a lib is
 # missing — so a packaged build no longer depends unconditionally on /opt. (This is
-# stage-1/bootstrap.)
+# stage-1/bootstrap)
 for _l in libadvapi32.a libkernel32.a libntdll.a libshell32.a libuser32.a; do
   if [ -f /usr/aarch64-pc-cygwin/lib/${_l} ]; then
     :  # already provided by cross-msysarm64-w32api-runtime — nothing to do
@@ -349,9 +340,6 @@ aarch64-pc-cygwin-g++ -DHAVE_CONFIG_H \
 ${srcdir}/${_realname}/winsup/cygwin/msys2_path_conv.cc
 
 touch msys2_path_conv.o
-  # 🔍 MB_CAPABLE CHECK STARTS HERE
-  echo "Checking _MB_CAPABLE..."
-
   cat > mb_check.c << 'EOF'
 #ifndef _MB_CAPABLE
 #error "_MB_CAPABLE is NOT defined"
@@ -359,26 +347,30 @@ touch msys2_path_conv.o
 int main() { return 0; }
 EOF
 
-  # Compile only: the gate asks a preprocessor question, and linking would need
-  # -lmsys-2.0 (injected by the driver's LIB_SPEC) -- which is this build's own
-  # output, not yet in the sysroot.
+  # -c, not a link: _MB_CAPABLE is a preprocessor question, and linking would be circular
+  # (LIB_SPEC injects -lmsys-2.0, which is this build's own output). Same as the crt0.o stub.
   ${CC} ${CFLAGS} -c mb_check.c -o mb_check.o || {
-    echo "❌ MB_CAPABLE check failed"
+    echo "MB_CAPABLE check failed"
     exit 1
   }
 
-  echo "✅ MB_CAPABLE is defined"
+  echo "MB_CAPABLE is defined"
   # 🔍 MB_CAPABLE CHECK ENDS HERE  
 
   echo "Current directory: $(pwd)"
   MAKEFILE="cygwin/Makefile"
 
   echo "Makefile clean patch applied"
-  make -j$(nproc) OBJEXT=o
+
+  # HARD-BOUNDED ARCHIVE (see ar-watchdog.sh header): libdll.a has hung silently, so cap it at 15 min.
+  # ${startdir}, NOT ${srcdir} — `makepkg -e` stages no plain-file sources; hence also not in source=().
+  _arwd="${startdir}/ar-watchdog.sh"
+  [ -f "${_arwd}" ] || { echo "FATAL: ar-watchdog.sh missing at ${_arwd}" >&2; exit 1; }
+  make -j$(nproc) OBJEXT=o AR="bash ${_arwd} ${AR}"
 }
 
 # -----------------------------------------------------------------------------
-# Stage-1 runtime is INTENTIONALLY bootstrap-only.
+# Stage-1 runtime is INTENTIONALLY bootstrap-only (issue #3, light-touch decision).
 #
 # It exists solely to break the GCC <-> runtime circular dependency: it produces
 # a first msys-2.0.dll + libmsys-2.0.a + newlib libs + the real crt0.o using the
@@ -391,7 +383,7 @@ EOF
 # Therefore package_*() here stays disabled on purpose: enabling it would create a
 # second, stage-1-compiler-built runtime package that must NOT be installed over
 # the stage-2 one, and would require wiring an extra build+install step into the
-# orchestrator (build-msys2-woarm64-all.sh). That is deferred.
+# orchestrator (build-msys2-woarm64-all.sh).
 #
 # package_msys2-runtime() {
 #   pkgdesc="Cygwin POSIX emulation engine (aarch64-pc-cygwin)"

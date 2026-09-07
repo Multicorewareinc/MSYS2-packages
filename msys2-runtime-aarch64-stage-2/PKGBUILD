@@ -23,7 +23,7 @@ makedepends=(
   "autotools"
 )
 source=(
-  "${_realname}::git+https://github.com/mayankag-qti/msys2-runtime-arm64#branch=arm64/qcom-runtime"
+  "${_realname}::git+https://github.com/qcom-eng-691/msys2-runtime#branch=qualcomm/aarch64-port"
 )
 sha256sums=('SKIP')
 
@@ -65,7 +65,7 @@ prepare() {
     echo "default-manifest.o stub installed"
   fi
 
-  # devices.cc: the old #pragma GCC optimize("O0") hack was removed.
+  # devices.cc: the old #pragma GCC optimize("O0") hack was removed (issue #5).
   # At the build's -O1 it compiles cleanly (the ldp_fusion SIGSEGV is -O2-only);
   # the per-object make rule below adds -mno-early-ldp-fusion so it also stays
   # safe if the tree is ever moved to -O2.
@@ -78,16 +78,16 @@ prepare() {
   # --- Real: Win32 import libs ---
   # These now come from the cross-msysarm64-w32api-runtime PACKAGE, which installs
   # libkernel32/user32/advapi32/shell32/ntdll.a directly into the MSYS cross sysroot
-  # /usr/aarch64-pc-cygwin/lib/. The winsup link expects them there, so
+  # /usr/aarch64-pc-cygwin/lib/ (see issue #3). The winsup link expects them there, so
   # a package-based build finds them already present and does NO /opt copy.
   # LEGACY FALLBACK: if the w32api-runtime package is not installed (e.g. a partial
   # build), fall back to copying from the mingw sysroot /opt/aarch64-w64-mingw32/lib/
   # (installed by mingw-w64-cross-mingwarm64-crt) — with a WARNING so it is obvious the
   # build is not yet on the packaged path. Idempotent either way.
   # netapi32/userenv/psapi/dbghelp are needed by the cygwin-linked utils
-  # (--enable-utils): mkpasswd/mkgroup -lnetapi32, cygpath/newgrp -luserenv,
-  # ldd/pldd/ps -lpsapi, minidumper -ldbghelp. kernel32..ntdll are the base set
-  # the DLL build needs. All present in /opt/aarch64-w64-mingw32/lib.
+  # (--enable-utils, epic #36 Part B): mkpasswd/mkgroup -lnetapi32, cygpath/newgrp
+  # -luserenv, ldd/pldd/ps -lpsapi, minidumper -ldbghelp. kernel32..ntdll are the
+  # base set the DLL build needs. All present in /opt/aarch64-w64-mingw32/lib.
   echo "--- Ensuring Win32 import libs are in /usr/aarch64-pc-cygwin/lib ---"
   _ok=1
   for lib in kernel32 user32 advapi32 shell32 ntdll netapi32 userenv psapi dbghelp; do
@@ -174,24 +174,9 @@ build() {
   export DLLTOOL=aarch64-pc-cygwin-dlltool
   export WINDRES=aarch64-pc-cygwin-windres
   export WINDMC=aarch64-pc-cygwin-windmc
-#  _headers="${HOME}/headers"
+  #  _headers="${HOME}/headers"
   which aarch64-w64-mingw32-g++ || \
     echo "WARNING: mingw aarch64 g++ not found"
-
-  # NOTE: the old "strip long-double libm files" step here was
-  # a `find newlib/libm -name Makefile.am | sed -d ...` loop. It was DEAD CODE:
-  # this newlib uses non-recursive automake, so there are NO Makefile.am files
-  # under newlib/libm/ (a single top-level newlib/Makefile.am includes the
-  # per-dir Makefile.inc fragments) — the loop body never ran and changed nothing.
-  # The real 64-bit-long-double handling for aarch64 is already upstream:
-  #   * newlib/libm/Makefile.inc only `include`s libm/ld80 or libm/ld128 for the
-  #     i386 / x86_64 / riscv machine dirs, NOT aarch64 — so the extended-precision
-  #     *l sources are never compiled for aarch64-pc-cygwin, and
-  #   * the *l entry points come from newlib/libm/common/*l.c, which alias to the
-  #     double routines under _LDBL_EQ_DBL (aarch64-pc-cygwin has long double == double).
-  # autogen below regenerates newlib/Makefile.in from those .inc fragments, so the
-  # exclusion is driven by configure, not by a post-clone sed.
-
 
   # Run autogen specifically for winsup
   cd ${srcdir}/${_realname}/winsup
@@ -277,18 +262,18 @@ sed -i '/-mno-use-libstdc-wrappers/d' cygwin/Makefile
 cat >> cygwin/Makefile << 'EOF'
 
 # GCC-15 AArch64 per-file workarounds — keep the build's -O1; NO -O0 drops.
-# Root causes:
+# Root causes (bisected on the pkgrel-2 cross toolchain, 2026-07-12):
 #  devices.o           : SIGSEGV in RTL pass ldp_fusion at -O2 (harmless no-op at -O1)
 #                        -> -mno-early-ldp-fusion
 #  fhandler/netdrive.o : GCC-15 -Wmisleading-indentation whole-file scan hangs forever
 #                        (optimizer is fine) -> -Wno-misleading-indentation (keeps -O1 -Wall -Werror)
 #  libc/minires-os-if.o: GCC-15 cc1 INTEGRATED-preprocessor segfault on the deep macro-dense
-#                        <iphlpapi.h> -> ole2.h -> rpcndr.h header chain. The same TU compiles
-#                        clean when preprocessed to a .i and fed with -fpreprocessed, and clean
-#                        with a SEPARATE cpp pass, so the bug is in cc1's lex-while-parse path,
-#                        NOT the optimizer (crashes at -O0 too), GC, --enable-checking, or stack
-#                        size. Fix = run a separate cpp pass for this one C TU. Restores the
-#                        Windows DNS resolver backend on AArch64.
+#                        <iphlpapi.h> -> ole2.h -> rpcndr.h header chain (issue #79 / toolchain #7).
+#                        Bisected 2026-07-27: the same TU compiles clean when preprocessed to a .i
+#                        and fed with -fpreprocessed, and clean with a SEPARATE cpp pass, so the bug
+#                        is in cc1's lex-while-parse path, NOT the optimizer (crashes at -O0 too),
+#                        GC, --enable-checking, or stack size. Fix = run a separate cpp pass for this
+#                        one C TU. Restores the Windows DNS resolver backend on AArch64.
 devices.o: CXXFLAGS += -mno-early-ldp-fusion
 fhandler/netdrive.o: CXXFLAGS += -Wno-misleading-indentation
 libc/minires-os-if.o: CFLAGS += -no-integrated-cpp
@@ -360,8 +345,6 @@ aarch64-pc-cygwin-g++ -DHAVE_CONFIG_H \
 ${srcdir}/${_realname}/winsup/cygwin/msys2_path_conv.cc
 
 touch msys2_path_conv.o
-  # 🔍 MB_CAPABLE CHECK STARTS HERE
-  echo "Checking _MB_CAPABLE..."
 
   cat > mb_check.c << 'EOF'
 #ifndef _MB_CAPABLE
@@ -370,59 +353,39 @@ touch msys2_path_conv.o
 int main() { return 0; }
 EOF
 
-  # Compile only: the gate asks a preprocessor question, and linking would need
-  # -lmsys-2.0 (injected by the driver's LIB_SPEC) -- which is this build's own
-  # output, not yet in the sysroot.
   ${CC} ${CFLAGS} -c mb_check.c -o mb_check.o || {
-    echo "❌ MB_CAPABLE check failed"
+    echo "MB_CAPABLE check failed"
     exit 1
   }
-
-  echo "✅ MB_CAPABLE is defined"
-  # 🔍 MB_CAPABLE CHECK ENDS HERE  
 
   echo "Current directory: $(pwd)"
   MAKEFILE="cygwin/Makefile"
 
   echo "Makefile clean patch applied"
-  make -j$(nproc) OBJEXT=o
+# AR override bounds libdll.a archiving at 15 min (silent 3h15m stall at CCAS sigfe.o).
+# ${startdir}, not ${srcdir}: makepkg -e stages no plain-file sources — hence not in source=().
+  _arwd="${startdir}/ar-watchdog.sh"
+  [ -f "${_arwd}" ] || { echo "FATAL: ar-watchdog.sh missing at ${_arwd}" >&2; exit 1; }
+  make -j$(nproc) OBJEXT=o AR="bash ${_arwd} ${AR}"
 
-  # --- native ARM64 MinGW host tools --------------------------------------------
-  # The runtime is configured --enable-mingw-utils, so the utils/ subdir builds the
-  # MinGW host-tool subset in utils/mingw/ (cygwin-console-helper, ldh,
-  # getprocaddrarm64). This is the SAME automake path the native x86_64 runtime uses
-  # -- no hand-written compile line. @MINGW_CXX@ was set to aarch64-w64-mingw32-g++
-  # at configure time.
+  # --- native ARM64 MinGW host tools -------------------------------------------
+  # --enable-mingw-utils builds only utils/mingw/ (cygwin-console-helper, ldh,
+  # getprocaddrarm64) via the same automake path as native x86_64; the ~26
+  # cygwin-linked utils stay off (--disable-utils).
   #
-  # utils/ builds TWO groups with DIFFERENT toolchains/flags, so build them with
-  # separate make invocations rather than one recursive `make` in utils/:
+  # utils/ now has two toolchains, so invoke make separately per group:
   #
-  # (a) MinGW host tools (utils/mingw/) -- built with aarch64-w64-mingw32-g++.
-  #     CFLAGS/CXXFLAGS/CPPFLAGS are EMPTIED: build() exports them with
-  #     -isystem /usr/aarch64-pc-cygwin/include for the cygwin DLL build, but for the
-  #     MinGW tools that makes <windows.h> resolve to the MSYS sysroot -> MSYS
-  #     libstdc++ wrapper -> C++ compile breaks (_GLIBCXX_NORETURN / 'exit' not
-  #     declared). Emptying lets the MinGW compiler use its own clean
-  #     /opt/aarch64-w64-mingw32 headers; the mingw Makefile.am supplies AM_CXXFLAGS.
+  # (a) MinGW host tools, built with aarch64-w64-mingw32-g++. CFLAGS/CXXFLAGS/
+  #     CPPFLAGS are EMPTIED: build() sets -isystem /usr/aarch64-pc-cygwin/include
+  #     for the cygwin DLL, which makes <windows.h> resolve to the MSYS sysroot and
+  #     breaks the C++ compile (_GLIBCXX_NORETURN / 'exit' not declared). Emptying
+  #     lets MinGW use its own /opt/aarch64-w64-mingw32 headers; AM_CXXFLAGS comes
+  #     from the mingw Makefile.am.
   ( cd "${srcdir}/runtime-build/utils/mingw" && make CFLAGS= CXXFLAGS= CPPFLAGS= ) \
     || { echo "FATAL: 'make' in runtime-build/utils/mingw failed (MinGW host tools). Aborting."; exit 1; }
 
-  # (b) cygwin-linked utils (utils/) -- built with the NATIVE aarch64-pc-cygwin-g++ and
-  #     DO need the exported msys sysroot CFLAGS/CXXFLAGS. They link the runtime via
-  #     -lcygwin (implicit in the msys gcc specs), which must resolve to the REAL
-  #     libmsys-2.0.a -- stage it (+ the libcygwin.a alias) from the just-built DLL
-  #     into the sysroot lib dir first (the bootstrap sysroot may hold only a stub).
-  #     `SUBDIRS=` stops recursion back into mingw/ (already built above with different
-  #     flags); `-k` keeps going so one non-compiling util does not block the rest -- a
-  #     first-pass discovery build. The CI smoke gate is the authoritative per-util
-  #     pass/fail; here we just produce as many .exe as compile.
-  #
-  # Win32 import libs for the util LINK: the cygwin-linked utils need
-  # netapi32/userenv/psapi/dbghelp (mkpasswd/mkgroup -lnetapi32, newgrp -luserenv,
-  # ldd/pldd/ps -lpsapi, minidumper -ldbghelp) in addition to the base kernel32..ntdll.
-  # prepare() stages these, but makepkg SKIPS prepare() on a reused src tree, so the
-  # util link would fail `cannot find -lnetapi32`. Re-stage here in build() (always
-  # runs), idempotent, so the link resolves regardless of whether prepare() ran.
+  # (b) cygwin-linked utils, native aarch64-pc-cygwin-g++ + msys sysroot flags. Stage real
+  #     libmsys-2.0.a and Win32 import libs here (prepare() is skipped on reused srcdir).
   for _l in kernel32 user32 advapi32 shell32 ntdll netapi32 userenv psapi dbghelp; do
     if [ ! -f /usr/aarch64-pc-cygwin/lib/lib${_l}.a ] && [ -f /opt/aarch64-w64-mingw32/lib/lib${_l}.a ]; then
       cp -f /opt/aarch64-w64-mingw32/lib/lib${_l}.a /usr/aarch64-pc-cygwin/lib/
@@ -437,23 +400,8 @@ EOF
   else
     echo "::warning:: libmsys-2.0.a not found in runtime-build/cygwin — cygwin-linked utils may fail to link -lcygwin"
   fi
-  # GCC-15 AArch64 cc1 integrated-preprocessor bug: the C utils that include the deep
-  # Windows header chain (mkpasswd/mkgroup/newgrp -> <windows.h> <lm.h> <wininet.h>
-  # <ntsecapi.h> <dsgetdc.h> <userenv.h>) HANG cc1's lex-while-parse path indefinitely
-  # (same root cause as the minires-os-if.c segfault fixed above; a hang vs a segfault,
-  # input-dependent). Each affected util compiles cleanly with a SEPARATE cpp pass.
-  # Build the whole utils group with -no-integrated-cpp -- a documented, supported GCC
-  # driver mode. We inject it by APPENDING to $(CC)/$(CXX) rather than passing
-  # CFLAGS=/CXXFLAGS= on the make line: those make vars are baked at configure time with
-  # the essential -nostdinc/-isystem <sysroot>/-O1/-D_MB_CAPABLE flags, and overriding
-  # them would DROP those (mkpasswd would silently lose -O1 and rely on gcc's default
-  # header search). The automake .c.o/.cc.o rules run '$(CC) ... $(CFLAGS)' /
-  # '$(CXX) ... $(CXXFLAGS)', so a flag on CC/CXX rides alongside all configured flags.
-  # Harmless on the .cc utils (cc1plus is unaffected). Applied build-wide so new C
-  # consumers of the Windows headers are covered. -C (keep comments) is REQUIRED
-  # alongside -no-integrated-cpp: the separate cpp pass strips comments before cc1 sees
-  # them, which would drop the /*FALLTHRU*/ markers in setfacl.c and ssp.c and trip
-  # -Werror=implicit-fallthrough. -C preserves them so those utils still build.
+  # GCC-15 aarch64 cc1 hangs preprocessing the deep Windows header chain, so build utils with
+  # -no-integrated-cpp (on $(CC)/$(CXX), not CFLAGS) plus -C to keep /*FALLTHRU*/ markers.
   ( cd "${srcdir}/runtime-build/utils" && make -k SUBDIRS= \
       CC="aarch64-pc-cygwin-gcc -no-integrated-cpp -C" \
       CXX="aarch64-pc-cygwin-g++ -no-integrated-cpp -C" ) \
@@ -564,12 +512,13 @@ package() {
   install -m755 "${_s}" "${pkgdir}/usr/aarch64-pc-cygwin/bin/msys-2.0.dll"
   echo "packaged msys-2.0.dll (from $(basename "${_s}"))"
 
-  # --- native ARM64 cygcheck ----------------------------------------------------
+  # --- native ARM64 cygcheck (issue #37, epic #36) ------------------------------
   # cygcheck is a MinGW host tool (a native PE; it does NOT link the msys runtime,
   # it LoadLibrary's msys-2.0.dll at runtime). The winsup build is configured
-  # --disable-utils for this tool, so `make` never builds it; compile it directly
-  # with the same aarch64-w64-mingw32 toolchain + flags/libs as
-  # winsup/utils/mingw/Makefile.am (cygcheck_SOURCES + cygcheck_LDADD). The
+  # --disable-utils, so `make` never builds it; compile it directly with the same
+  # aarch64-w64-mingw32 toolchain + flags/libs as winsup/utils/mingw/Makefile.am
+  # (cygcheck_SOURCES + cygcheck_LDADD). This is the exact compile the runtime CI
+  # gate (cygwin.yml "Validate cygcheck (native ARM64)") proves each run. The
   # compiler (mingw-w64-cross-mingwarm64-gcc), -lz (…-zlib) and CRT (…-crt) are
   # already makedepends of this package. STRICT: any failure is a hard exit 1.
   ( cd "${srcdir}/${_realname}/winsup" && aarch64-w64-mingw32-g++ \
@@ -588,7 +537,7 @@ package() {
   install -m755 "${srcdir}/cygcheck.exe" "${pkgdir}/usr/aarch64-pc-cygwin/bin/cygcheck.exe"
   echo "packaged native ARM64 cygcheck.exe"
 
-  # --- native ARM64 cygwin-console-helper ---------------------------------------
+  # --- native ARM64 cygwin-console-helper (issue #38, epic #36) -----------------
   # Unlike cygcheck above, this MinGW host tool is built by `make` in build()
   # (runtime configured --enable-mingw-utils), exactly as the native x86_64 runtime
   # builds it — no hand-written compile line. Just install the automake output.
@@ -603,9 +552,12 @@ package() {
   install -m755 "${_cch}" "${pkgdir}/usr/aarch64-pc-cygwin/bin/cygwin-console-helper.exe"
   echo "packaged native ARM64 cygwin-console-helper.exe (built via make)"
 
-  # --- native ARM64 ldh ---------------------------------------------------------
+  # --- native ARM64 ldh (issue #39, epic #36) -----------------------------------
   # ldh (load-DLL helper; used by cygcheck's BLODA scan) is another MinGW host tool
   # built by `make` in build() via --enable-mingw-utils. Install the automake output.
+  # (The runtime CI gate for #39 landed via #75; this install was intended for
+  # packages #12 but that PR merged into the orphaned #11 branch, so it never
+  # reached ci/cross-runtime-packaging — carried here instead.)
   # STRICT: missing exe or wrong arch is a hard exit 1.
   _ldh="${srcdir}/runtime-build/utils/mingw/ldh.exe"
   [ -f "${_ldh}" ] \
@@ -617,7 +569,7 @@ package() {
   install -m755 "${_ldh}" "${pkgdir}/usr/aarch64-pc-cygwin/bin/ldh.exe"
   echo "packaged native ARM64 ldh.exe (built via make)"
 
-  # --- native ARM64 getprocaddrarm64 --------------------------------------------
+  # --- native ARM64 getprocaddrarm64 (issue #42, epic #36) ----------------------
   # The gentle-kill helper. Built by `make` via HAVE_MINGWARM64_CC. Installs into
   # libexec (NOT bin): the runtime spawns it as /usr/libexec/getprocaddrarm64.exe
   # (winsup/cygwin/include/cygwin/exit_process.h). STRICT: hard exit 1 on failure.
@@ -632,11 +584,11 @@ package() {
   install -m755 "${_gpa}" "${pkgdir}/usr/aarch64-pc-cygwin/libexec/getprocaddrarm64.exe"
   echo "packaged native ARM64 getprocaddrarm64.exe (built via make, -> libexec)"
 
-  # --- cygwin-linked utils ------------------------------------------------------
-  # Install every util that actually built in build() (first-pass discovery; some
-  # may not compile yet — non-fatal here, the CI smoke gate is authoritative).
-  # cygps installs as ps (the Makefile `transform = s/cygps/ps/`). dumper is out of
-  # scope (--disable-dumper). Source dir = runtime-build/utils/*.exe.
+  # --- cygwin-linked utils (issues #43-#67, epic #36 Part B) --------------------
+  # Install every Part-B util that actually built in build() (first-pass discovery;
+  # some may not compile yet — non-fatal here, the CI smoke gate is authoritative).
+  # cygps installs as ps (the Makefile `transform = s/cygps/ps/`). dumper (#68) is
+  # out of scope (--disable-dumper). Source dir = runtime-build/utils/*.exe.
   _ub="${srcdir}/runtime-build/utils"
   _partb_ok=0; _partb_missing=""
   for u in chattr cygpath gencat getconf getfacl gmondump kill ldd locale lsattr \
@@ -656,14 +608,16 @@ package() {
   else
     _partb_missing="${_partb_missing} cygps(ps)"
   fi
-  echo "packaged ${_partb_ok}/25 cygwin-linked utils"
-  # Must NOT be a bare `[ ... ] && echo` as the last statement of package():
-  # makepkg runs package() under errexit, so the function's exit status is that of
-  # its final command. With every util built, _partb_missing is empty, the test
-  # returns 1 and makepkg aborts after all the work succeeded -- failing only on
-  # total success. Use if/fi so the function always ends on a true command.
+  echo "packaged ${_partb_ok}/25 cygwin-linked Part-B utils"
+  # NOTE: must NOT be a bare `[ ... ] && echo` as the LAST statement of package().
+  # makepkg runs package() under `shopt -o -s errexit errtrace` with `trap ... ERR`,
+  # so the function's exit status is that of its final command. When every util
+  # builds, _partb_missing is empty, the test returns 1, package() returns 1, and
+  # makepkg aborts with "A failure occurred in package()" AFTER all the work
+  # succeeded. Paradoxically it only failed on total success. Use if/fi so the
+  # function always ends on a true command.
   if [ -n "${_partb_missing}" ]; then
-    echo "  not built:${_partb_missing}"
+    echo "  not built (see CI smoke gate):${_partb_missing}"
   fi
   return 0
 }

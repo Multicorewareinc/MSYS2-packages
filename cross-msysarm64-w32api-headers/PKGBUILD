@@ -1,4 +1,5 @@
-# Maintainer: Windows on ARM Experiments
+# Maintainer: Mayank Agrawal <mayagr@qti.qualcomm.com>
+
 pkgname="cross-msysarm64-w32api-headers"
 pkgver=13.0.0
 pkgrel=8
@@ -23,8 +24,7 @@ _sysroot=/usr/${_target}
 
 prepare() {
   cd ${srcdir}/mingw-w64
-  # Source-level replacement for the old post-build basetsd.h `sed`: guard the
-  # 64-bit-pointer INT_PTR/LONG_PTR/HANDLE_PTR typedefs on
+  # guard the 64-bit-pointer INT_PTR/LONG_PTR/HANDLE_PTR typedefs on
   # __aarch64__ as well as _WIN64, since the GNU aarch64-pc-cygwin toolchain does
   # not predefine _WIN64. A named, reviewable, upstreamable patch.
   git apply --whitespace=fix \
@@ -36,14 +36,8 @@ build() {
   mkdir -p ${srcdir}/headers-build
   cd ${srcdir}/headers-build
 
-  # --enable-w32api installs the Win32 API headers under PREFIX/include/w32api
-  # (shorthand that also sets --disable-crt). This matches how upstream MSYS2
-  # ships them and is what winsup expects, since cygwin sources include them as
-  # <w32api/ntstatus.h>. They were previously installed flat into include/, so
-  # those includes failed and each runtime recipe hand-built a mirror; that is now
-  # unnecessary. --disable-crt also drops the MSVCRT libc headers, replacing the
-  # manual strip loop -- the libc layer is owned by newlib + cygwin via
-  # cross-msysarm64-runtime-devel.
+  # --enable-w32api: install the Win32 API headers under PREFIX/include/w32api
+  # (shorthand that also sets --disable-crt).
   ${srcdir}/mingw-w64/mingw-w64-headers/configure \
     --prefix=${_sysroot} \
     --host=${_target} \
@@ -60,27 +54,8 @@ build() {
 package() {
   cd ${srcdir}/headers-build
 
-  # Install to both bare sysroot and sysroot/usr for maximum compatibility
-  # Some tools look in /usr/aarch64-pc-cygwin/include/
-  # Others look in /usr/aarch64-pc-cygwin/usr/include/
-
   # Install to sysroot/usr (standard prefix install)
   make DESTDIR=${pkgdir} install
-
-  # # Also copy to bare sysroot locations
-  # mkdir -p ${pkgdir}${_sysroot}/include
-  # mkdir -p ${pkgdir}${_sysroot}/sys-include
-  # cp -r ${pkgdir}${_sysroot}/usr/include/. \
-  #   ${pkgdir}${_sysroot}/include/
-  # cp -r ${pkgdir}${_sysroot}/usr/include/. \
-  #   ${pkgdir}${_sysroot}/sys-include/
-
-  # NOTE: basetsd.h's 64-bit-pointer guard is now fixed at the source level in
-  # prepare() (0001-basetsd-aarch64-64bit-pointers.patch) instead of a post-build
-  # `sed` here.
-
-  # With the headers under include/w32api/ there is no file conflict with
-  # runtime-devel's include/.
 
   echo "--- cross-msysarm64-w32api-headers check (headers under include/w32api) ---"
   [ -f ${pkgdir}${_sysroot}/include/w32api/windows.h ] && \

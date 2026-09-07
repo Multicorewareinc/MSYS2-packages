@@ -1,7 +1,7 @@
 # Maintainer: Windows on ARM Experiments
 _realname=msys2-runtime
 pkgbase=${_realname}
-# Collision-free cross pkgname: NEVER the host names
+# Collision-free cross pkgname (issue #14): NEVER the host names
 # msys2-runtime / msys2-runtime-devel, which would let `pacman -U` clobber the
 # host x86_64 MSYS2 runtime on the build box. This is the stage-1 bootstrap
 # newlib; distinct from stage-2's cross-msysarm64-newlib so both can coexist.
@@ -26,7 +26,7 @@ makedepends=(
   "autotools"
 )
 source=(
-  "${_realname}::git+https://github.com/mayankag-qti/msys2-runtime-arm64#branch=arm64/qcom-runtime"
+  "${_realname}::git+https://github.com/qcom-eng-691/msys2-runtime#branch=qualcomm/aarch64-port"
 )
 sha256sums=('SKIP')
 
@@ -63,11 +63,12 @@ CEOF
     -o /usr/aarch64-pc-cygwin/lib/crt0.o
   echo "crt0.o stub installed"
 
-  # --- default-manifest.o: NOT stubbed ---
-  # The old stub was an empty object written into the live sysroot and never into
-  # ${pkgdir}, so it shipped in no package while masking the gap in-tree. The real
-  # object comes from cross-msysarm64-windows-default-manifest; re-stubbing here
-  # would clobber it with the empty one.
+  # Removed for the same reason as in the parent recipe: the stub was an EMPTY
+  # object written into the live sysroot and never into ${pkgdir}, so it shipped
+  # in no package (every link against the PUBLISHED toolchain then failed with
+  # "ld: cannot find default-manifest.o") while masking that gap in-tree. The
+  # real object now comes from cross-msysarm64-windows-default-manifest at build
+  # step 12; re-stubbing here would clobber it with the empty one.
 
   # --- Stub: libcygwin.a ---
   # Circular dep: libcygwin.a IS what we're building.
@@ -180,8 +181,8 @@ build() {
   # AC_NO_EXECUTABLES (cross bootstrap: target binaries can't run on the build
   # host), and a link test after AC_NO_EXECUTABLES is a hard configure error
   # ("link tests are not allowed after AC_NO_EXECUTABLES"). Pre-seed the cache
-  # so configure skips both link tests — we don't link sframe/zstd (the dumper
-  # is --disable-dumper). Mirrors the stage-2 recipes.
+  # so configure skips both link tests — we don't link sframe/zstd (dumper is
+  # --disable-dumper). Mirrors the stage-2 recipes.
   export ac_cv_lib_sframe_sframe_decode=no
   export ac_cv_lib_zstd_ZSTD_isError=no
   unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
@@ -210,9 +211,10 @@ export CFLAGS="\
 -isystem ${SYSROOT_INC}/w32api \
 -D_MB_CAPABLE=1 \
 "
-  # -isystem ${SYSROOT_INC}/w32api: the Win32 API headers live under
-  # include/w32api/, and this -nostdinc build must add that dir explicitly since
-  # the gcc spec's automatic -idirafter is suppressed under -nostdinc. Lets a bare
+  # -isystem ${SYSROOT_INC}/w32api: the Win32 API headers now live under
+  # include/w32api/ (cross-msysarm64-w32api-headers --enable-w32api). This
+  # -nostdinc build must add it explicitly since the gcc spec's automatic
+  # `-idirafter .../include/w32api` is suppressed under -nostdinc. Lets bare
   # <windows.h> resolve while winsup's <w32api/ntstatus.h> resolves via
   # ${SYSROOT_INC} above.
   
@@ -220,9 +222,11 @@ export CFLAGS="\
   export CFLAGS_FOR_TARGET="$CFLAGS"
   export CPPFLAGS_FOR_TARGET="$CFLAGS"
 
-  # winsup's C++ TUs include libstdc++ headers such as <new>, and
-  # -nostdinc/-nostdinc++ drops the default C++ search, so add the target
-  # libstdc++ include dirs explicitly (mirrors the stage-2 runtime recipe).
+  # C++ flags: winsup has C++ TUs (cxx.cc, etc.) that include libstdc++ headers
+  # such as <new>. Under -nostdinc/-nostdinc++ the default C++ search is dropped,
+  # so add the target libstdc++ include dirs explicitly (mirrors the stage-2
+  # runtime recipe). Without this the winsup C++ compile fails:
+  #   cygwin-cxx.h:17:10: fatal error: new: No such file or directory
   export CXXFLAGS="\
 -nostdinc \
 -nostdinc++ \
@@ -293,7 +297,6 @@ export CFLAGS="\
     CFLAGS="-O2 -pipe -D_MB_CAPABLE=1" \
     CXXFLAGS="${CXXFLAGS} -O2 -pipe"
 
-      # 🔍 MB_CAPABLE CHECK STARTS HERE
   echo "Checking _MB_CAPABLE..."
 
   cat > mb_check.c << 'EOF'
@@ -307,34 +310,19 @@ EOF
   # -lmsys-2.0 (injected by the driver's LIB_SPEC) -- which is this build's own
   # output, not yet in the sysroot.
   ${CC} ${CFLAGS} -c mb_check.c -o mb_check.o || {
-    echo "❌ MB_CAPABLE check failed"
+    echo "MB_CAPABLE check failed"
     exit 1
   }
 
-  echo "✅ MB_CAPABLE is defined"
-  # 🔍 MB_CAPABLE CHECK ENDS HERE  
-  # --------------------------------------------------------------------------
-  # Build ONLY what this recipe delivers: the newlib target libs.
-  #
-  # This is the first runtime step, and its job is to produce the archives
-  # (libc.a / libm.a / libg.a) that package() ships into the sysroot and that
-  # msys2-runtime-aarch64 copies in as ${srcdir}/newlib before building winsup.
-  #
-  # A bare top-level `make` builds `all`, which reaches past newlib into
-  # all-target-winsup -- compiling the whole ~700-object winsup tree and linking
-  # msys-2.0.dll. That work is redundant: the next step configures winsup
-  # separately (winsup/configure, not the top-level one) with its own flags and
-  # its own granular make, and never reads an artifact out of this tree's
-  # winsup/ directory.
-  #
-  # `all-target-newlib` is the exact goal. The top-level Makefile makes winsup
-  # depend on newlib, never the reverse, so asking for newlib alone is
-  # well-defined and cannot silently skip anything newlib needs.
-  # --------------------------------------------------------------------------
+  echo "MB_CAPABLE is defined"
+
+  # Build ONLY the newlib target libs — a bare `make` also builds winsup, which step 2 rebuilds
+  # from scratch anyway. Safe: winsup depends on newlib, never the reverse.
+  # ---------------------------------------------------------------------------
   make -j$(nproc) all-target-newlib
 
-  # Fail here rather than letting a downstream step trip over a missing archive:
-  # package() and the next build step both hard-require these three.
+  # Fail loudly here rather than letting a downstream step trip over a missing
+  # archive: package() and STEP 2 both hard-require these three.
   _nlb="${srcdir}/runtime-build/${_target}/newlib"
   for _l in libc.a libm.a libg.a; do
     [ -f "${_nlb}/${_l}" ] || {
@@ -354,8 +342,8 @@ package() {
   # aarch64-pc-cygwin cross compiler. `make DESTDIR install` is deliberately NOT
   # used: configure ran with --prefix=/usr, so a DESTDIR install would stage
   # into host /usr/{bin,lib,include} and a `pacman -U` of a host-named package
-  # would overwrite the build box's own x86_64 MSYS2 runtime.
-  # Mirrors stage-2 cross-msysarm64-newlib's package().
+  # would overwrite the build box's own x86_64 MSYS2 runtime (the 2026-07-02
+  # foot-gun). Mirrors stage-2 cross-msysarm64-newlib's package().
   pkgdesc="newlib C runtime libs for the aarch64-pc-cygwin cross toolchain (stage 1)"
   install -d "${pkgdir}/usr/aarch64-pc-cygwin/lib"
   local _l _s

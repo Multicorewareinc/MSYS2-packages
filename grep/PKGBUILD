@@ -12,10 +12,10 @@
 
 pkgname=grep
 pkgver=3.0
-pkgrel=7
+pkgrel=8
 epoch=1
 pkgdesc="A string search utility"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:GPL-3.0-or-later')
 url="https://www.gnu.org/software/grep/"
 msys2_repository_url='https://cgit.git.savannah.gnu.org/cgit/grep.git'
@@ -24,7 +24,14 @@ msys2_references=(
 )
 depends=('libiconv' 'libintl' 'libpcre' 'sh')
 makedepends=('texinfo' 'gettext-devel' 'libiconv-devel' 'pcre-devel' 'autotools' 'gcc')
-source=(https://ftp.gnu.org/gnu/${pkgname}/${pkgname}-${pkgver}.tar.xz{,.sig}
+# The ARM64 seed builds this with --disable-perl-regexp, so the cross package
+# neither links nor needs libpcre; see build(). depends= above is left alone
+# because it describes the native package, and the seed is chained by hand with
+# --nodeps rather than through an installed pacman DB.
+if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+  depends=('libiconv' 'libintl' 'sh')
+fi
+source=(https://mirrors.kernel.org/gnu/${pkgname}/${pkgname}-${pkgver}.tar.xz{,.sig}
         grep-3.0-2.src.patch)
 sha256sums=('e2c81db5056e3e8c5995f0bb5d0d0e1cad1f6f45c3b2fc77b6e81435aed48ab5'
             'SKIP'
@@ -48,6 +55,19 @@ build() {
 
   export gl_cv_have_weak=no
 
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    ./configure \
+      --build=${CHOST} \
+      --host=aarch64-pc-cygwin \
+      --prefix=/usr \
+      --disable-perl-regexp \
+      --without-libiconv-prefix \
+      --without-libintl-prefix \
+      gl_cv_func_getopt_gnu=yes
+    make
+    return
+  fi
+
   export MSYSTEM=CYGWIN
   ./configure \
       --build=${CHOST} \
@@ -58,6 +78,8 @@ build() {
 }
 
 check() {
+  # target binaries can't run on the x64 (emulated) cross host
+  [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]] && return 0
   cd ${srcdir}/${pkgname}-${pkgver}
   make check
 }

@@ -14,7 +14,7 @@ AArch64 always has 64-bit pointers, so widen the guard to also fire on
 __aarch64__ (matching how __x86_64__/__ia64__ are handled a few lines
 above for POINTER_64_INT). This replaces the post-build `sed` in the
 cross-msysarm64-w32api-headers PKGBUILD with a source-level, reviewable
-change.
+change (issue #6, Gap 4).
 
 Signed-off-by: Windows on ARM Experiments <woarm@qti.qualcomm.com>
 ---

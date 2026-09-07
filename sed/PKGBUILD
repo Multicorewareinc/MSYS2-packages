@@ -4,7 +4,7 @@ pkgname=sed
 pkgver=4.9
 pkgrel=1
 pkgdesc="GNU stream editor"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.gnu.org/software/sed"
 msys2_repository_url='https://cgit.git.savannah.gnu.org/cgit/sed.git'
 msys2_references=(
@@ -14,7 +14,7 @@ msys2_references=(
 license=('spdx:GPL-3.0-or-later')
 depends=('libintl' 'sh')
 makedepends=('gettext' 'gettext-devel' 'autotools' 'gcc')
-source=(https://ftp.gnu.org/pub/gnu/sed/${pkgname}-${pkgver}.tar.xz{,.sig}
+source=(https://mirrors.kernel.org/gnu/sed/${pkgname}-${pkgver}.tar.xz{,.sig}
         sed-4.4-1.src.patch
         sed-4.4-msys-use-text-mode.patch)
 sha256sums=('6e226b732e1cd739464ad6862bd1a1aba42d7982922da7a53519631d24975181'
@@ -37,6 +37,17 @@ build() {
 
   export gl_cv_have_weak=no
 
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    ./configure \
+      --prefix=/usr \
+      --build=${CHOST} \
+      --host=aarch64-pc-cygwin \
+      gl_cv_func_getopt_gnu=yes \
+      gl_cv_func_strcasecmp_works=no
+    make all
+    return
+  fi
+
   ./configure \
     --prefix=/usr \
     --build=${CHOST}
@@ -44,6 +55,7 @@ build() {
 }
 
 check() {
+  [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]] && return 0
   cd ${srcdir}/${pkgname}-${pkgver}
   make check
 }

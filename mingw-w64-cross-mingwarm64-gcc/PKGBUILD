@@ -100,7 +100,7 @@ _build() {
       local _arch=armv8.1-a
       local _tune=cortex-x1
       local _conf=""
-      _langs="${_langs} fortran"
+      _langs="${_langs},fortran"
     ;;
   esac
 
@@ -114,7 +114,7 @@ _build() {
     --disable-bootstrap \
     --with-arch=${_arch} \
     --with-tune=${_tune} \
-    --enable-languages=${_langs} \
+    --enable-languages="${_langs}" \
     --enable-shared \
     --enable-static \
     --enable-threads=${_threads} \

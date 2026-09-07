@@ -13,7 +13,7 @@ msys2_references=(
 )
 license=('spdx:LGPL-3.0-or-later OR GPL-2.0-or-later')
 makedepends=('autotools' 'gcc')
-source=(https://ftp.gnu.org/gnu/gmp/gmp-${pkgver}.tar.xz{,.sig}
+source=(https://mirrors.kernel.org/gnu/gmp/gmp-${pkgver}.tar.xz{,.sig}
         "0001-gcc15.patch")
 sha256sums=('a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898'
             'SKIP'
@@ -29,11 +29,6 @@ prepare() {
 
   autoreconf -fi
 
-  # libtool 2.6.2-1 lost every `msys*` case label, so $host_os=msys matches no
-  # Windows branch and libtool silently refuses shared libraries (-> static-only
-  # -> no dest/usr/bin -> package_gmp() fails). ltmain.sh is patched too: its
-  # own `-lc` skip list lost *-*-msys*, which downgrades the link to static even
-  # after configure reports "Shared libraries: yes". See the helper for details.
   source "${startdir}/../.ci/fix-msys-libtool.sh"
   fix_msys_libtool configure ltmain.sh
 }
@@ -79,15 +74,6 @@ check() {
 }
 
 package_gmp() {
-  # A static-only build leaves no dest/usr/bin at all, and a bare `cp` then
-  # reports a missing directory instead of the actual problem. Say what is
-  # really wrong: libtool silently refusing to build shared libraries.
-  #
-  # Two DIFFERENT failures both end with no dest/usr/bin, so distinguish them
-  # rather than blaming the first one. If the DLLs exist but sit in usr/lib,
-  # the libraries built fine and only the install DESTINATION is wrong -- the
-  # `*msys*,*lai,yes,no,*.dll` label that puts PE DLLs in bindir is missing from
-  # ltmain.sh (rule 4 in .ci/fix-msys-libtool.sh).
   if [[ ! -d $srcdir/dest/usr/bin ]]; then
     if compgen -G "$srcdir/dest/usr/lib/*.dll" > /dev/null; then
       echo "==> ERROR: gmp DID build shared libraries, but libtool installed them" >&2

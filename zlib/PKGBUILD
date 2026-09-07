@@ -4,7 +4,7 @@ pkgname=('zlib' 'zlib-devel')
 pkgver=1.3.2
 pkgrel=1
 pkgdesc='Compression library implementing the deflate compression method found in gzip and PKZIP'
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 groups=('libraries')
 license=('spdx:Zlib')
 url="https://www.zlib.net/"
@@ -36,6 +36,33 @@ prepare() {
 build() {
   cd ${srcdir}/${pkgname}-${pkgver}
 
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # MSYSTEM is deliberately NOT exported (the native path below does that):
+    # it selects host-side MSYS path mangling, and the cross build's target
+    # identity comes from PREFIX and $CC.
+    ./configure --prefix=/usr
+
+    local _xp=aarch64-pc-cygwin-
+    make -j1 -f win32/Makefile.gcc \
+      PREFIX="${_xp}" \
+      CFLAGS="${CFLAGS}" \
+      LDFLAGS="${LDFLAGS}" \
+      SHAREDLIB=msys-z.dll
+
+    make -f win32/Makefile.gcc install \
+      PREFIX="${_xp}" \
+      DESTDIR="${srcdir}/dest" \
+      SHAREDLIB=msys-z.dll \
+      BINARY_PATH=/usr/bin \
+      INCLUDE_PATH=/usr/include \
+      LIBRARY_PATH=/usr/lib \
+      prefix=/usr \
+      SHARED_MODE=1
+
+    install -D zlib.3 "${srcdir}/dest/usr/share/man/man3/zlib.3"
+    return
+  fi
+
   # configure doesn't really work.. but leave it here in case things improve
   export MSYSTEM=CYGWIN
   ./configure --prefix=/usr
@@ -58,6 +85,8 @@ build() {
 }
 
 check() {
+  # target binaries can't run on the x64 (emulated) cross host.
+  [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]] && return 0
   cd ${srcdir}/${pkgname}-${pkgver}
   make test
 }

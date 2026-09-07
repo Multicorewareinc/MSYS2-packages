@@ -107,13 +107,13 @@ _build() {
     i686*)
       local _conf="--disable-sjlj-exceptions --with-dwarf2"
       local _arch=pentium4
-      _langs="${_langs} fortran"
+      _langs="${_langs},fortran"
     ;;
 
     x86_64*)
       local _arch=nocona
       local _conf=""
-      _langs="${_langs} fortran"
+      _langs="${_langs},fortran"
     ;;
   esac
 
@@ -127,7 +127,7 @@ _build() {
     --disable-bootstrap \
     --with-arch=${_arch} \
     --with-tune=generic \
-    --enable-languages=${_langs} \
+    --enable-languages="${_langs}" \
     --enable-shared \
     --enable-static \
     --enable-threads=${_threads} \

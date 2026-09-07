@@ -1,4 +1,4 @@
-Force the runtime-pseudo-reloc stub undef on aarch64-pc-cygwin shared links
+Force the runtime-pseudo-reloc stub undef on aarch64 MSYS2 shared links
 
 ld synthesises the runtime-pseudo-reloc stub (*_ertr*.o) only AFTER it has
 finished scanning archives, so the stub's fresh reference to
@@ -16,10 +16,13 @@ native x86_64 target already gets (there via a .refptr resolved at link time).
 The undef is gated on %{shared|mdll}, so executable links are unaffected.
 
 This must go in gcc/config/aarch64/msys.h, NOT in i386/cygwin-w64.h:
-config.gcc lists aarch64/msys.h LAST in tm_file for this target and that
+config.gcc lists aarch64/msys.h LAST in tm_file for this target
+(aarch64-*-cygwin* since the #48 retarget) and that
 header #undef's LINK_SPEC, so any LINK_SPEC written into cygwin-w64.h is
 discarded.  Verify with `aarch64-pc-cygwin-gcc -dumpspecs | grep pei386` on the
 built driver, not by reading the headers.
+
+Refs: qcom-eng-691/MSYS2-packages#37, qcom-eng-691/msys2-cross-toolchain#15
 
 diff --git a/gcc/config/aarch64/msys.h b/gcc/config/aarch64/msys.h
 index d104f34..237a023 100644

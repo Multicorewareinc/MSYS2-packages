@@ -17,7 +17,7 @@ msys2_references=(
 license=('spdx:GPL-3.0-or-later')
 makedepends=('ncurses-devel' 'autotools' 'gcc')
 options=('!emptydirs')
-source=(https://ftp.gnu.org/gnu/readline/readline-${_basever}.tar.gz{,.sig}
+source=(https://mirrors.kernel.org/gnu/readline/readline-${_basever}.tar.gz{,.sig}
         inputrc
         readline-7.0.3-3.clipboard.patch
         readline-7.0.3-3.src.patch
@@ -25,7 +25,7 @@ source=(https://ftp.gnu.org/gnu/readline/readline-${_basever}.tar.gz{,.sig}
         readline-6.3-paste-utf8.patch)
 if [ $_patchlevel -gt 0 ]; then
     for (( p=1; p<=$((10#${_patchlevel})); p++ )); do
-        source=(${source[@]} https://ftp.gnu.org/gnu/readline/readline-${_basever}-patches/readline${_basever//./}-$(printf "%03d" $p){,.sig})
+        source=(${source[@]} https://mirrors.kernel.org/gnu/readline/readline-${_basever}-patches/readline${_basever//./}-$(printf "%03d" $p){,.sig})
     done
 fi
 sha256sums=('fe5383204467828cd495ee8d1d3c037a7eba1389c22bc6a041f627976f9061cc'
@@ -114,33 +114,25 @@ package_libreadline() {
 
   install -Dm644 inputrc "${pkgdir}"/etc/inputrc
 
-  # support/shlib-install is passed -b .../dest/usr/bin but ignores it for the
-  # msys/pc host combination and installs into -d (usr/lib) instead, so the
-  # `cp -rf dest/usr/bin` above copies nothing and libreadline shipped zero
-  # DLLs. The Windows loader searches the exe's directory and PATH, never
-  # usr/lib, so a DLL left there is invisible to every consumer at run time.
-  # Place them explicitly, accepting either source location so this keeps
-  # working if a future readline honours -b.
-  local _d _cand _found
+  local _d _found
   for _d in msys-readline8.dll msys-history8.dll; do
     _found=""
     for _cand in "${srcdir}/dest/usr/bin/${_d}" "${srcdir}/dest/usr/lib/${_d}"; do
       [ -f "${_cand}" ] && { _found="${_cand}"; break; }
     done
     if [ -z "${_found}" ]; then
-      echo "==> ERROR: ${_d} not found in dest/usr/{bin,lib}" >&2
-      return 1
+      echo "::error::${_d} not found in dest/usr/{bin,lib} -- shared build did not emit it"
+      exit 1
     fi
     install -Dm755 "${_found}" "${pkgdir}/usr/bin/${_d}"
   done
-  # Assert the count, not just presence: a per-file test still passes when the
-  # copy only half-works.
   local _n
   _n=$(find "${pkgdir}/usr/bin" -maxdepth 1 -name 'msys-*8.dll' | wc -l)
   if [ "${_n}" -ne 2 ]; then
-    echo "==> ERROR: libreadline must ship 2 dlls in usr/bin, found ${_n}" >&2
-    return 1
+    echo "::error::libreadline must ship 2 dlls in usr/bin, found ${_n} "
+    exit 1
   fi
+  echo "==> ok: libreadline ships ${_n} ARM64 dlls in usr/bin"
 }
 
 package_libreadline-devel() {
@@ -153,15 +145,12 @@ package_libreadline-devel() {
   cp -rf ${srcdir}/dest/usr/include ${pkgdir}/usr/
   cp -rf ${srcdir}/dest/usr/lib ${pkgdir}/usr/
 
-  # The runtime DLLs are owned by libreadline (usr/bin), so drop the copies
-  # shlib-install left in usr/lib: pacman refuses packages with conflicting
-  # files, and a stale usr/lib copy is the invisible-DLL bug again. The .dll.a
-  # import libs and headers stay here; only the .dll go.
   rm -f "${pkgdir}"/usr/lib/msys-readline8.dll "${pkgdir}"/usr/lib/msys-history8.dll
   local _stray
   _stray=$(find "${pkgdir}/usr/lib" -maxdepth 1 -name '*.dll' | wc -l)
   if [ "${_stray}" -ne 0 ]; then
-    echo "==> ERROR: ${_stray} stray .dll left in libreadline-devel usr/lib" >&2
-    return 1
+    echo "::error::${_stray} stray .dll left in libreadline-devel usr/lib"
+    exit 1
   fi
+  echo "==> ok: libreadline-devel ships no .dll in usr/lib"
 }

@@ -2,7 +2,7 @@
 # Contributor: Ray Donnelly <mingw.android@gmail.com>
 
 pkgbase=bash
-pkgname=('bash' 'bash-devel')
+pkgname=('bash' 'bash-devel' 'bash-testsuite')
 _basever=5.3
 _patchlevel=015 #prepare for some patches
 pkgver=${_basever}.${_patchlevel}
@@ -17,7 +17,7 @@ msys2_references=(
 )
 validpgpkeys=('7C0135FB088AAF6C66C650B9BB5869F064EA74AB') # Chet Ramey
 makedepends=('gettext-devel' 'libreadline-devel>=7.0' 'ncurses-devel' 'autotools' 'gcc')
-source=(https://ftp.gnu.org/gnu/bash/bash-${_basever}.tar.gz{,.sig}
+source=(https://mirrors.kernel.org/gnu/bash/bash-${_basever}.tar.gz{,.sig}
         0001-bash-4.4-cygwin.patch
         0002-bash-4.3-msysize.patch
         0005-bash-4.3-msys2-fix-lineendings.patch
@@ -25,7 +25,7 @@ source=(https://ftp.gnu.org/gnu/bash/bash-${_basever}.tar.gz{,.sig}
         0007-fix-static-build.patch)
 if [ $_patchlevel -gt 000 ]; then
   for (( p=1; p<=$((10#${_patchlevel})); p++ )); do
-    source=(${source[@]} https://ftp.gnu.org/gnu/bash/bash-${_basever}-patches/bash${_basever//./}-$(printf "%03d" $p){,.sig})
+    source=(${source[@]} https://mirrors.kernel.org/gnu/bash/bash-${_basever}-patches/bash${_basever//./}-$(printf "%03d" $p){,.sig})
   done
 fi
 noextract=(${pkgbase}-${_basever}.tar.gz)
@@ -56,7 +56,7 @@ build() {
   export MSYSTEM=CYGWIN
 
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
-    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
+    # Cross-build for aarch64-pc-cygwin.
     # Uses the seed readline/ncurses/libintl/libiconv staged under the toolchain
     # sysroot at /usr/aarch64-pc-cygwin/usr.
     #   - GCC-15 too new for bash sources: -std=gnu89 (build + target).
@@ -85,14 +85,34 @@ build() {
 
     expr ${pkgrel} > .build || :
 
-    # The test helpers recho/zecho/printenv/xcase are meant to run in the TARGET
-    # environment, but bash's Makefile builds them with CC_FOR_BUILD. Force the
-    # target CC for those so a native ARM64 testsuite can use them later.
+    # CC_FOR_BUILD must stay the BUILD compiler here: `all` builds genuine build
+    # tools (mksyntax, mksignames, bashversion, buildversion) that have to run on
+    # this x64 host. Overriding it globally cross-builds those too and the build
+    # dies trying to execute an ARM64 mksyntax.
     make CPPFLAGS=-DWORDEXP_OPTION \
          HISTORY_LDFLAGS= \
          READLINE_LDFLAGS= \
          CC_FOR_BUILD=gcc \
          LOCAL_LDFLAGS='-Wl,--export-all,--out-implib,lib$(@:.exe=.dll.a)'
+    rm -f recho.exe zecho.exe printenv.exe xcase.exe
+
+    make CPPFLAGS=-DWORDEXP_OPTION \
+         HISTORY_LDFLAGS= \
+         READLINE_LDFLAGS= \
+         CC_FOR_BUILD="${CC:-aarch64-pc-cygwin-gcc}" \
+         CFLAGS_FOR_BUILD="-std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include" \
+         LDFLAGS_FOR_BUILD="-L/usr/aarch64-pc-cygwin/usr/lib" \
+         recho.exe zecho.exe printenv.exe xcase.exe
+
+    # Gate: each helper must be an ARM64 PE. `file` is the discriminator -- mere
+    # existence proves nothing, since the x64 `all` pass creates the same names.
+    for h in recho zecho printenv xcase; do
+      [ -f "$h.exe" ] || { echo "ERROR: testsuite helper $h.exe was not built"; exit 1; }
+      case "$(file "$h.exe")" in
+        *ARM64*|*Aarch64*|*aarch64*) echo "HELPER_ARM64_OK:$h" ;;
+        *) echo "ERROR: $h.exe is not an ARM64 PE: $(file "$h.exe")"; exit 1 ;;
+      esac
+    done
     return
   fi
 
@@ -132,7 +152,10 @@ package_bash() {
   provides=('sh')
 
   cd ${srcdir}/${pkgname}-$_basever
-  make DESTDIR=${pkgdir} install
+  make DESTDIR=${pkgdir} \
+       HISTORY_LDFLAGS= \
+       READLINE_LDFLAGS= \
+       install
 
   cp -fp ${pkgdir}/usr/bin/{ba,}sh.exe
 
@@ -149,6 +172,18 @@ package_bash() {
     unset until wait while [ ; do
     cp -fp alias.1.gz $f.1.gz
   done
+}
+
+package_bash-testsuite() {
+ pkgdesc="Bash's own test suite (bash/tests/run-all) plus its target-built helpers"
+ options=('!strip')
+ cd ${srcdir}/${pkgbase}-$_basever
+ install -d ${pkgdir}/usr/share/bash/tests
+ cp -a tests/. ${pkgdir}/usr/share/bash/tests/
+ for h in recho zecho printenv xcase; do
+   [ -f "$h.exe" ] || { echo "ERROR: $h.exe missing -- build() should have made it"; exit 1; }
+   install -m755 "$h.exe" ${pkgdir}/usr/share/bash/tests/
+ done
 }
 
 package_bash-devel() {

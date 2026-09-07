@@ -93,7 +93,7 @@ _build() {
     --disable-bootstrap \
     --with-arch=${_arch} \
     --with-tune=${_tune} \
-    --enable-languages=${_langs} \
+    --enable-languages="${_langs}" \
     --disable-shared \
     --enable-static \
     --enable-threads=${_threads} \

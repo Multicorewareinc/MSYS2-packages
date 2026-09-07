@@ -1,29 +1,39 @@
-# Maintainer: Windows on ARM Experiments
+# Maintainer: Mayank Agrawal <mayagr@qti.qualcomm.com>
 #
 # Default Windows application manifest for the aarch64-pc-cygwin cross sysroot.
 #
 # This is the aarch64 counterpart of the x64 `windows-default-manifest` package
-# (shipped upstream as msys/windows-default-manifest, which owns
-# /usr/lib/default-manifest.o). Both build the same upstream cygwin-apps source;
-# only the install prefix and the windres differ.
+# (in-tree, and shipped by upstream MSYS2 as msys/windows-default-manifest,
+# which owns /usr/lib/default-manifest.o). Both build the same upstream
+# cygwin-apps source; the only difference is the install prefix and the windres
+# used.
 #
+# WHY THIS PACKAGE EXISTS
+# ----------------------------------
 # GCC's built-in spec appends default-manifest.o to EVERY non-shared link:
 #
 #     %{!shared:%:if-exists(default-manifest.o%s)}
 #
-# The `if-exists` guard resolves the name against the compiler search path (%s),
-# but the bare filename is what reaches ld -- so when the file is absent from the
-# sysroot the guard still passes and every link dies with "ld: cannot find
-# default-manifest.o". Since autoconf's compiler probe both compiles and links,
-# that surfaces as the misleading "could not find a working compiler".
+# The `if-exists` guard resolves the name against the COMPILER search path
+# (%s), but the bare filename is what gets handed to ld. When the file is not in
+# the sysroot the guard still passes and every link then dies with
 #
-# The x64 target has always shipped this file. The aarch64 sysroot never packaged
-# it -- it was hand-placed during early bring-up, so a gcc rebuild stopped
-# inheriting the stale file and exposed the gap. Packaging it restores x64 parity;
-# the alternative of patching the spec to drop the reference would silently strip
-# the default manifest (asInvoker privileges, supportedOS GUIDs) from every ARM64
-# executable. The x64 object is not reusable: it is pe-x86-64 where the target
-# needs pe-aarch64-little.
+#     ld: cannot find default-manifest.o: No such file or directory
+#
+# Because autoconf's compiler probe both compiles AND links, that surfaces as
+# the badly misleading "could not find a working compiler" -- which is how it
+# presented when it blocked the whole userland seed at its first package (gmp).
+#
+# The x64 target has always shipped this file, so its links work. The aarch64
+# sysroot never packaged it: it was hand-placed during early bring-up (pacman
+# -Qo reported no owner), so the gcc-15.0.1-2 -> -3 rebuild simply stopped
+# inheriting the stale file and exposed the gap. Packaging it restores x64
+# parity rather than diverging from it -- the alternative (patching the spec to
+# drop the reference) would silently strip the default manifest (asInvoker
+# privileges, supportedOS compatibility GUIDs) from every ARM64 executable.
+#
+# The x64 object is NOT reusable: it is pe-x86-64 while the target needs
+# pe-aarch64-little (the two differ from byte 2).
 
 pkgname="cross-msysarm64-windows-default-manifest"
 pkgver=6.4
@@ -59,30 +69,12 @@ prepare() {
 build() {
   cd "${srcdir}/windows-default-manifest"
 
-  # Upstream's configure.ac hard-rejects any host that is not *-cygwin or
-  # *-mingw*. The aarch64-pc-cygwin triple matches *-cygwin directly, so no
-  # host spoofing is needed. WINDRES is still set explicitly to keep the tool
-  # choice unambiguous; AC_CHECK_TOOL honours an already-set value.
   WINDRES=${_target}-windres \
   ./configure \
     --prefix=${_sysroot} \
     --build=${CHOST} \
     --host=${_target}
 
-  # RC_FLAGS carries a preprocessor override, and it is load-bearing. windres
-  # shells the .rc through a C preprocessor derived from its own tool prefix, so
-  # aarch64-pc-cygwin-windres runs aarch64-pc-cygwin-gcc -- which does not exist yet
-  # at this point in the bootstrap (this package precedes gcc-stage1, because the
-  # object must exist before that gcc links anything).
-  #
-  # Pointing windres at the host cpp is sound rather than a workaround:
-  # default-manifest.rc has no #include and no macros, so preprocessing is
-  # target-independent, and windres itself chooses the output format. Verified
-  # with the target gcc hidden from PATH: the object is byte-identical to one
-  # preprocessed by aarch64-pc-cygwin-gcc.
-  #
-  # No -F/--target: upstream only passes it for i?86/x86_64, and windres already
-  # emits pe-aarch64-little for this target.
   make RC_FLAGS='--preprocessor=gcc --preprocessor-arg=-E --preprocessor-arg=-xc --preprocessor-arg=-DRC_INVOKED'
 }
 
