@@ -1,0 +1,115 @@
+# hexdump, built standalone from the util-linux sources.
+#
+# Why a dedicated recipe rather than porting util-linux: util-linux is a large,
+# Linux-oriented package (libmount, libblkid, libsmartcols, ...) with no aarch64
+# arm and a configure that has never been run for aarch64-pc-cygwin.  hexdump
+# itself needs only seven translation units and no util-linux libraries, so it
+# builds directly.  bash's testsuite (run-printf, via printf6.sub) needs it, and
+# without it that group fails on aarch64 while passing on x86_64 purely because
+# the host happens to ship one.
+
+_srcname=util-linux
+pkgname=hexdump
+pkgver=2.40.2
+_pkgmajor=2.40
+pkgrel=1
+pkgdesc="Display file contents in hexadecimal, decimal, octal or ascii (from util-linux)"
+arch=('i686' 'x86_64' 'aarch64')
+url="https://www.kernel.org/pub/linux/utils/util-linux/"
+license=('spdx:BSD-3-Clause')
+groups=('base-devel')
+source=(https://www.kernel.org/pub/linux/utils/${_srcname}/v${_pkgmajor}/${_srcname}-${pkgver}.tar.xz)
+sha256sums=('d78b37a66f5922d70edf3bdfb01a6b33d34ed3c3cafd6628203b2a2b67c8e8b3')
+
+# The seven TUs hexdump actually needs.  closestream is header-only (there is no
+# lib/closestream.c); color-names.c supplies color_sequence_from_colorname and
+# color_get_sequence, which colors.c references.
+_sources=(
+  text-utils/hexdump.c
+  text-utils/hexdump-conv.c
+  text-utils/hexdump-display.c
+  text-utils/hexdump-parse.c
+  lib/colors.c
+  lib/color-names.c
+  lib/strutils.c
+)
+
+prepare() {
+  cd "${srcdir}/${_srcname}-${pkgver}"
+
+  # util-linux's configure has never been run for aarch64-pc-cygwin, and running
+  # it would drag in the whole package.  Write only what these seven TUs consult.
+  # Each of these guards a "provide our own fallback" block in include/c.h or
+  # include/closestream.h that would otherwise collide with the sysroot's real
+  # declaration (loff_t, reallocarray, fsync) or hard-error (nanosleep).
+  cat > config.h <<'EOF'
+#define PACKAGE           "util-linux"
+#define PACKAGE_STRING    "util-linux 2.40.2"
+#define PACKAGE_VERSION   "2.40.2"
+#define VERSION           "2.40.2"
+
+#define HAVE_LOFF_T       1
+#define HAVE_NANOSLEEP    1
+#define HAVE_REALLOCARRAY 1
+#define HAVE_FSYNC        1
+#define HAVE_ERR_H        1
+#define HAVE_WIDECHAR     1
+#define HAVE_STRTOULL     1
+#define HAVE_DECL_ERRNO   1
+
+/* strtold IS exported by msys-2.0.dll and present in libc.a, but the sysroot's
+   stdlib.h declares only strtold_l and _strtold_r, so lib/strutils.c fails to
+   compile without this.  That is a header gap in cross-msysarm64-runtime-devel;
+   remove this once the runtime headers declare strtold. */
+#include <stddef.h>
+long double strtold (const char *__restrict, char **__restrict);
+EOF
+  echo "config.h written for ${CARCH}"
+}
+
+build() {
+  cd "${srcdir}/${_srcname}-${pkgver}"
+
+  local _cc="${CC:-gcc}" _extra=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _cc="${CC:-aarch64-pc-cygwin-gcc}"
+    # HIGH_ENTROPY_VA breaks the cygheap's fixed 8GiB reservation at
+    # 0x800000000 and makes fork fail in the child; every target binary needs
+    # this.  Set explicitly rather than relying on LDFLAGS reaching here.
+    _extra+=(-Wl,--disable-high-entropy-va)
+  fi
+
+  # -std=gnu99 -D_GNU_SOURCE: strutils.c uses vasprintf and C99 declarations.
+  ${_cc} -O2 -std=gnu99 -D_GNU_SOURCE \
+    -I. -Iinclude -Itext-utils -DHAVE_CONFIG_H -include config.h \
+    "${_sources[@]}" \
+    "${_extra[@]}" \
+    -o hexdump.exe
+
+  # Refuse to package a host binary by mistake: `file` is the discriminator,
+  # since a wrong-architecture build links and packages perfectly happily.
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    case "$(file -b hexdump.exe)" in
+      *ARM64*|*Aarch64*|*aarch64*) echo "HEXDUMP_ARM64_OK" ;;
+      *) echo "ERROR: hexdump.exe is not an ARM64 PE: $(file -b hexdump.exe)" >&2
+         return 1 ;;
+    esac
+  fi
+}
+
+check() {
+  cd "${srcdir}/${_srcname}-${pkgver}"
+  # Target binaries cannot run on the build host.
+  [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]] && return 0
+  printf 'hello\n' | ./hexdump.exe -b | grep -q '^0000000 150 145 154 154 157 012' \
+    || { echo "ERROR: hexdump -b output unexpected" >&2; return 1; }
+  echo "hexdump -b output verified"
+}
+
+package() {
+  cd "${srcdir}/${_srcname}-${pkgver}"
+  install -Dm755 hexdump.exe        "${pkgdir}/usr/bin/hexdump.exe"
+  install -Dm644 text-utils/hexdump.1 "${pkgdir}/usr/share/man/man1/hexdump.1"
+  install -Dm644 Documentation/licenses/COPYING.BSD-3-Clause \
+    "${pkgdir}/usr/share/licenses/${pkgname}/COPYING.BSD-3-Clause" 2>/dev/null || true
+}
