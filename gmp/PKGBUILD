@@ -38,6 +38,10 @@ build() {
 
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
     # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
+    # --disable-assembly: GMP's hand-written aarch64 assembly assumes the ELF
+    #   ABI; on this PE/COFF target mpz_tdiv_q silently terminates the process
+    #   (exit 0, no message), so `expr N % M` and `expr N / M` returned empty
+    #   and bash's run-set-e failed. The C fallback is slower but correct.
     # --disable-fat: fat binaries select an x86 CPU variant at runtime; on
     #   aarch64 gmp uses its own arch dispatch, so fat is meaningless/harmful.
     CFLAGS+=" -Wno-attributes" \
@@ -48,6 +52,7 @@ build() {
       --prefix=/usr \
       --enable-cxx \
       --disable-fat \
+      --disable-assembly \
       --enable-shared --disable-static
     make
     make DESTDIR="${srcdir}/dest" install
