@@ -47,6 +47,26 @@ prepare() {
   patch -p1 -i ${srcdir}/0006-bash-4.3-add-pwd-W-option.patch
   patch -p1 -i ${srcdir}/0007-fix-static-build.patch
 
+  # environ is a DATA symbol exported by msys-2.0.dll.  A bare
+  #   extern char **environ;
+  # makes ld fall back to auto-import, and on AArch64 that pseudo-relocation is
+  # never applied: bash.exe ends up with 8 __fu*_environ thunks writing to a
+  # LOCAL copy.  bash keeps the C library environment in sync with
+  #   environ = export_env;      (variables.c)
+  # so with a broken auto-import the runtime never sees the new environment --
+  # "export TZ=..." has no effect on printf %()T in the same process, while a
+  # spawned child still works (export_env goes to execve directly).  That is
+  # the run-printf failure.  dllimport routes the assignment through
+  # __imp_environ, i.e. the DLL's real variable.
+  for _f in shell.c variables.c; do
+    sed -i "s/^extern char \*\*environ;/__declspec(dllimport) extern char **environ;/" "${_f}"
+  done
+  if ! grep -q "dllimport) extern char " variables.c; then
+    echo "FATAL: environ dllimport patch did not apply" >&2
+    return 1
+  fi
+  echo "environ declared dllimport in shell.c and variables.c"
+
   autoconf
 }
 
@@ -79,7 +99,7 @@ build() {
       bash_cv_dev_fd=standard \
       bash_cv_wexitstatus_offset=8 \
       bash_cv_termcap_lib=libncurses \
-      CFLAGS="-std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include -I/usr/aarch64-pc-cygwin/usr/include/ncursesw" \
+      CFLAGS="-O2 -std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include -I/usr/aarch64-pc-cygwin/usr/include/ncursesw" \
       CFLAGS_FOR_BUILD="-fcommon -std=gnu89" \
       LDFLAGS="${LDFLAGS} -L/usr/aarch64-pc-cygwin/usr/lib"
 
@@ -100,8 +120,8 @@ build() {
          HISTORY_LDFLAGS= \
          READLINE_LDFLAGS= \
          CC_FOR_BUILD="${CC:-aarch64-pc-cygwin-gcc}" \
-         CFLAGS_FOR_BUILD="-std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include" \
-         LDFLAGS_FOR_BUILD="-L/usr/aarch64-pc-cygwin/usr/lib" \
+         CFLAGS_FOR_BUILD="-O2 -std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include" \
+         LDFLAGS_FOR_BUILD="-L/usr/aarch64-pc-cygwin/usr/lib -Wl,--disable-high-entropy-va" \
          recho.exe zecho.exe printenv.exe xcase.exe
 
     # Gate: each helper must be an ARM64 PE. `file` is the discriminator -- mere
@@ -112,6 +132,23 @@ build() {
         *ARM64*|*Aarch64*|*aarch64*) echo "HELPER_ARM64_OK:$h" ;;
         *) echo "ERROR: $h.exe is not an ARM64 PE: $(file "$h.exe")"; exit 1 ;;
       esac
+      # HIGH_ENTROPY_VA (0x20) must be OFF.  It lets the loader place
+      # allocations anywhere in the 128TB space, including inside the 8GiB the
+      # cygheap must reserve at 0x800000000; fork in the child then fails with
+      #   child_copy: cygheap read copy failed, 0x0..
+      # bash.exe gets -Wl,--disable-high-entropy-va from LDFLAGS in the cross
+      # config, but these helpers are a SEPARATE make invocation that only sees
+      # LDFLAGS_FOR_BUILD, so the flag has to be set there too.  Checked here
+      # because the symptom appears only much later, as scattered testsuite
+      # failures in whichever groups happen to use the helpers.
+      _dc=$(aarch64-pc-cygwin-objdump -p "$h.exe" 2>/dev/null               | awk '/DllCharacteristics/{print $2; exit}')
+      if [ -n "${_dc}" ] && [ $(( 0x${_dc} & 0x20 )) -ne 0 ]; then
+        echo "ERROR: $h.exe has HIGH_ENTROPY_VA set (DllCharacteristics=0x${_dc})."
+        echo "       fork will fail in the testsuite; add"
+        echo "       -Wl,--disable-high-entropy-va to LDFLAGS_FOR_BUILD."
+        exit 1
+      fi
+      echo "HELPER_NO_HIGH_ENTROPY_OK:$h"
     done
     return
   fi
