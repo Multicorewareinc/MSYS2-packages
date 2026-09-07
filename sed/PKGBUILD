@@ -44,7 +44,11 @@ build() {
       --host=aarch64-pc-cygwin \
       gl_cv_func_getopt_gnu=yes \
       gl_cv_func_strcasecmp_works=no
-    make all
+    # SUBDIRS is "po . gnulib-tests"; gnulib-tests is gnulib's OWN test
+    # suite, installs nothing, and gcc-15 hangs indefinitely compiling its
+    # vma-iter.c for this target (cc1 spins with no -O flag at all).
+    # Build only what the package actually ships.
+    make all SUBDIRS='po .'
     return
   fi
 
@@ -62,6 +66,13 @@ check() {
 
 package() {
   cd ${srcdir}/${pkgname}-${pkgver}
-  make DESTDIR=${pkgdir} install
+  # Same SUBDIRS restriction as build(): `make install` otherwise descends
+  # into gnulib-tests, which builds (and hangs on) vma-iter.c even though it
+  # installs nothing.
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    make DESTDIR=${pkgdir} SUBDIRS='po .' install
+  else
+    make DESTDIR=${pkgdir} install
+  fi
   rm -f ${pkgdir}/usr/lib/charset.alias
 }
