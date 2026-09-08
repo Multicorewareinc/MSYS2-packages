@@ -58,10 +58,15 @@ prepare() {
   # spawned child still works (export_env goes to execve directly).  That is
   # the run-printf failure.  dllimport routes the assignment through
   # __imp_environ, i.e. the DLL's real variable.
-  for _f in shell.c variables.c; do
+  # support/printenv.c needs it for the same reason: it is one of the four
+  # testsuite helpers, and with auto-import it reads a bogus address, prints
+  # nothing and exits 1 -- silently costing the appendop, func, nameref and
+  # varenv groups, with no error anywhere pointing at printenv.
+  for _f in shell.c variables.c support/printenv.c; do
     sed -i "s/^extern char \*\*environ;/__declspec(dllimport) extern char **environ;/" "${_f}"
   done
-  if ! grep -q "dllimport) extern char " variables.c; then
+  if ! grep -q "dllimport) extern char " variables.c ||
+     ! grep -q "dllimport) extern char " support/printenv.c; then
     echo "FATAL: environ dllimport patch did not apply" >&2
     return 1
   fi
