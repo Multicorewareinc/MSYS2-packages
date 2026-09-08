@@ -214,6 +214,7 @@ build() {
   -isystem ${GCC_BASE}/include \
   -isystem ${GCC_BASE}/include-fixed \
   -isystem ${GCC_BASE}/include/c++ \
+  -isystem ${GCC_BASE}/include/c++/aarch64-pc-cygwin \
   -isystem ${GCC_BASE}/include/c++/backward \
   -isystem ${HOME}/headers/aarch64-pc-cygwin/include \
   -isystem /usr/aarch64-pc-cygwin/include \
@@ -334,6 +335,7 @@ aarch64-pc-cygwin-g++ -DHAVE_CONFIG_H \
 -isystem ${GCC_BASE}/include \
 -isystem ${GCC_BASE}/include-fixed \
 -isystem ${GCC_BASE}/include/c++ \
+-isystem ${GCC_BASE}/include/c++/aarch64-pc-cygwin \
 -isystem ${GCC_BASE}/include/c++/backward \
 -isystem ${HOME}/headers/aarch64-pc-cygwin/include \
 -isystem /usr/aarch64-pc-cygwin/include \
