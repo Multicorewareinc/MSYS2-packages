@@ -72,6 +72,22 @@ prepare() {
   fi
   echo "environ declared dllimport in shell.c and variables.c"
 
+  # Same defect, different symbol: support/xcase.c redeclares
+  #   extern int optind;
+  # which overrides the correct __declspec(dllimport) declaration that
+  # <unistd.h> already provides.  optind is a DATA symbol in msys-2.0.dll, so
+  # the bare extern forces auto-import and on AArch64 the pseudo-relocation is
+  # never applied.  xcase then reads a garbage optind, "av += optind" walks off
+  # argv and "av[0][0]" segfaults -- unconditionally, with or without flags.
+  # That is the run-coproc segfault ("coproc xcase -n -u"), which also cost the
+  # two Bad-file-descriptor lines that followed it.
+  sed -i "s/^extern int optind;/__declspec(dllimport) extern int optind;/" support/xcase.c
+  if ! grep -q "dllimport) extern int optind" support/xcase.c; then
+    echo "FATAL: optind dllimport patch did not apply" >&2
+    return 1
+  fi
+  echo "optind declared dllimport in support/xcase.c"
+
   autoconf
 }
 
