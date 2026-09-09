@@ -13,11 +13,36 @@ license=('GPL')
 depends=("libiconv" "zlib" "libzstd" "libintl")
 makedepends=("libiconv-devel" "zlib-devel" 'autotools' 'gcc' 'libzstd-devel' 'gettext-devel' 'git' 'gmp-devel' 'mpfr-devel')
 options=('staticlibs' '!distcc' '!ccache' '!buildflags')
-source=("${_realname}"::"git+https://github.com/Multicorewareinc/binutils-woarm64.git#branch=aarch64-on-latest"
+# Upstream binutils-gdb, pinned to the commit our AArch64 series is based on.
+# Our changes are NOT carried in a fork any more: they are the woarm64-*.patch
+# series below, generated from binutils-woarm64 aarch64-on-latest with
+#   git format-patch 1469a04f309..HEAD
+_upstream_commit=1469a04f30917ef6a2bf4afc73e442b836574563
+source=("${_realname}"::"git+https://sourceware.org/git/binutils-gdb.git#commit=${_upstream_commit}"
+        woarm64-0001-WIP-fix-to-dll-relocations.patch
+        woarm64-0002-Add-error-messages-for-invalid-relocations.patch
+        woarm64-0003-binutils-2.43-cygwin-config-rpath.patch.patch
+        woarm64-0004-Add-aarch64-pc-cygwin-target.patch
+        woarm64-0005-Allow-build-of-libsim-for-aarch64-w64-mingw32-and-aa.patch
+        woarm64-0006-Add-auto-import-support-to-AArch64-9.patch
+        woarm64-0007-PE-COFF-AArch64-avoid-ADRP-for-ABS-small-constants.patch
+        woarm64-0008-ld-pep.em-use-mingw_behavior-for-the-aarch64-cygwin-.patch
+        woarm64-0009-bfd-aarch64-PE-mark-handled-relocs-with-r_ignore.patch
+        woarm64-0010-bfd-restore-the-section_htab-guards-removed-by-b3dcd.patch
         0002-check-for-unusual-file-harder.patch
         0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch
         9999-workarounds.patch)
 sha256sums=('SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
             'SKIP'
             'SKIP'
             'SKIP')
@@ -31,6 +56,10 @@ apply_patch_with_msg() {
 
 prepare() {
   cd ${srcdir}/binutils
+
+  # The AArch64 port, as a patch series on top of upstream binutils.
+  # (Previously these lived as commits on binutils-woarm64 aarch64-on-latest.)
+  apply_patch_with_msg \n    woarm64-0001-WIP-fix-to-dll-relocations.patch \n    woarm64-0002-Add-error-messages-for-invalid-relocations.patch \n    woarm64-0003-binutils-2.43-cygwin-config-rpath.patch.patch \n    woarm64-0004-Add-aarch64-pc-cygwin-target.patch \n    woarm64-0005-Allow-build-of-libsim-for-aarch64-w64-mingw32-and-aa.patch \n    woarm64-0006-Add-auto-import-support-to-AArch64-9.patch \n    woarm64-0007-PE-COFF-AArch64-avoid-ADRP-for-ABS-small-constants.patch \n    woarm64-0008-ld-pep.em-use-mingw_behavior-for-the-aarch64-cygwin-.patch \n    woarm64-0009-bfd-aarch64-PE-mark-handled-relocs-with-r_ignore.patch \n    woarm64-0010-bfd-restore-the-section_htab-guards-removed-by-b3dcd.patch
   # apply_patch_with_msg \
   #   0002-check-for-unusual-file-harder.patch \
   #   0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch \
