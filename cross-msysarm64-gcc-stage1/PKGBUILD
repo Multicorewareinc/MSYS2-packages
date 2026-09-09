@@ -125,36 +125,10 @@ prepare() {
 
   # The AArch64 port, as a patch series on top of upstream GCC.
   # (Previously these lived as commits on gcc-woarm64 aarch64-on-latest.)
-  git apply --whitespace=fix \
-    "${srcdir}"/woarm64-0001-aarch64-Bypass-some-warnings-in-MinGW.patch \
-    "${srcdir}"/woarm64-0002-aarch64-Add-stdcall-and-cdecl-attributes.patch \
-    "${srcdir}"/woarm64-0003-aarch64-Add-SEH-stack-unwinding-and-C-exceptions.patch \
-    "${srcdir}"/woarm64-0004-Support-SEH-for-fragmented-functions.patch \
-    "${srcdir}"/woarm64-0005-Fix-unwiding-code-for-a-floating-point-register-pair.patch \
-    "${srcdir}"/woarm64-0006-Fix-unwiding-codes-when-stack-probing-is-applied.patch \
-    "${srcdir}"/woarm64-0007-Rebase-woarm64-aarch64-pe-target-prototype.patch \
-    "${srcdir}"/woarm64-0008-Fix-undefined-reference-to-mingw-10.patch \
-    "${srcdir}"/woarm64-0009-Fix-missing-aarch64-opt.url-files-after-rebase.patch \
-    "${srcdir}"/woarm64-0010-Fix-undefined-references-to-__gthr_win32_-shared-lib.patch \
-    "${srcdir}"/woarm64-0011-Build-configuration-fixes-to-enable-native-aarch64-w.patch \
-    "${srcdir}"/woarm64-0012-Allow-some-warnings-when-building-libgcc-36.patch \
-    "${srcdir}"/woarm64-0013-Fix-build-of-winnt-d.cc-when-D-language-is-enabled.-.patch \
-    "${srcdir}"/woarm64-0014-0001-Cygwin-use-SysV-ABI-on-x86_64.patch.patch \
-    "${srcdir}"/woarm64-0015-0002-Cygwin-add-dummy-pthread-tsaware-and-large-addr.patch \
-    "${srcdir}"/woarm64-0016-0004-Cygwin-MinGW-skip-test.patch.patch \
-    "${srcdir}"/woarm64-0017-0005-Cygwin-define-RTS_CONTROL_ENABLE-and-DTR_CONTRO.patch \
-    "${srcdir}"/woarm64-0018-0007-Cygwin-__cxa-atexit.patch.patch \
-    "${srcdir}"/woarm64-0019-0008-Cygwin-libgomp-soname.patch.patch \
-    "${srcdir}"/woarm64-0020-0009-Cygwin-g-time.patch.patch \
-    "${srcdir}"/woarm64-0021-0010-Cygwin-newlib-ftm.patch.patch \
-    "${srcdir}"/woarm64-0022-0101-Cygwin-enable-libgccjit-not-just-for-MingW.patc.patch \
-    "${srcdir}"/woarm64-0023-0102-Cygwin-testsuite-fixes-for-libgccjit.patch.patch \
-    "${srcdir}"/woarm64-0024-Add-aarch64-pc-cygwin-target.patch \
-    "${srcdir}"/woarm64-0025-Add-support-for-shared-attribute-41.patch \
-    "${srcdir}"/woarm64-0026-mingw-use-mingw_pe_seh_emit_stackalloc-in-seh_patter.patch \
-    "${srcdir}"/woarm64-0027-aarch64-build-aarch64-abi-ms.o-for-the-cygwin-target.patch \
-    "${srcdir}"/woarm64-0028-libgcc-do-not-build-soft-fp-for-aarch64-pc-cygwin.patch \
-    "${srcdir}"/woarm64-0029-aarch64-mingw-emit-d-form-register-names-for-.seh_sa.patch
+  for _p in "${srcdir}"/woarm64-*.patch; do
+    msg2 "Applying $(basename "${_p}")"
+    git apply --whitespace=fix "${_p}" || return 1
+  done
 
   git apply --whitespace=fix \
     "${srcdir}"/0012-Handle-spaces-in-path-for-default-manifest.patch \
