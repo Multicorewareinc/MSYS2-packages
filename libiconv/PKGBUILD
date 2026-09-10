@@ -5,7 +5,7 @@ pkgver=1.19
 pkgrel=1
 pkgdesc='Libiconv is a conversion library'
 groups=('libraries')
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 makedepends=('autotools' 'gcc' 'gettext-devel')
 url='https://www.gnu.org/software/libiconv/'
 msys2_repository_url='https://git.savannah.gnu.org/gitweb/?p=libiconv.git'
@@ -44,12 +44,89 @@ prepare() {
 
   cp -f srcm4/* m4/
 
+  # libcharset is a self-contained sub-package with its OWN configure.ac and m4/
+  # dir, and libiconv-1.16-msysize.patch adds AC_CONFIG_MACRO_DIR([m4]) to it, so
+  # regenerating it searches libcharset/m4 and nothing else. That dir ships only 4
+  # of the 8 macro files it needs, and the copy above populates the top-level m4/
+  # only, so aclocal silently leaves gl_RELOCATABLE unexpanded. configure keeps
+  # going and exits 0, but libcharset never builds, so the top-level
+  # lib/localcharset.h rule never delivers the header and the failure surfaces
+  # minutes later as a missing-header error rather than a broken macro dir. Copy
+  # the exact list upstream's own autogen.sh copies before regenerating.
+  for _m4 in build-to-host.m4 codeset.m4 fcntl-o.m4 host-cpu-c-abi.m4 \
+             lib-ld.m4 relocatable.m4 relocatable-lib.m4 visibility.m4; do
+    cp -f "srcm4/${_m4}" "libcharset/m4/${_m4}"
+  done
+
   (cd libcharset && autoreconf -fiv)
   autoreconf -fiv
+
+  # gl_RELOCATABLE going unexpanded is only a runtime warning, so a broken
+  # macro dir would otherwise cost a full build to notice. Fail loudly here.
+  if grep -q '^gl_RELOCATABLE$' libcharset/configure; then
+    echo "==> ERROR: libcharset/configure still has an unexpanded gl_RELOCATABLE" >&2
+    echo "    -- libcharset/m4 is missing macros from srcm4." >&2
+    return 1
+  fi
+
+  # libtool 2.6.2-1 lost every `msys*` case label, so $host_os=msys matches no
+  # Windows branch and libtool silently refuses shared libraries. ltmain.sh is
+  # patched too (its `-lc` skip list lost *-*-msys*).
+  source "${startdir}/../.ci/fix-msys-libtool.sh"
+  fix_msys_libtool configure libcharset/configure
+  # ltmain.sh's location depends on where autoreconf puts the aux dir, so find
+  # it rather than assuming. Missing it entirely is NOT harmless -- that is the
+  # hunk that keeps the link from silently degrading to static, and a
+  # `[ -f ]` guard would skip it quietly. Require at least one.
+  _lt_found=0
+  while IFS= read -r lt; do
+    fix_msys_libtool "$lt"
+    _lt_found=1
+  done < <(find . -maxdepth 3 -name ltmain.sh -type f)
+  if [[ ${_lt_found} -eq 0 ]]; then
+    echo "==> ERROR: no ltmain.sh found -- libtool would link static-only." >&2
+    return 1
+  fi
 }
 
 build() {
   cd ${srcdir}/${pkgname}-${pkgver}
+
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
+    # Cross cache vars (target test programs can't run on the x64 host):
+    #  - gl_cv_clean_version_stddef=yes: without it gnulib's generated stddef.h
+    #    disables the __need_wint_t special-invocation path and newlib fails to
+    #    typedef wint_t -> "unknown type name 'wint_t'".
+    #  - am_cv_proto_iconv*: pin the iconv() prototype (the AC_TRY_RUN probe
+    #    can't execute cross), matching the ARM Cygwin bring-up.
+    # -O1 on lib/iconv.c: GCC-15 ICEs (IPA inline pass) compiling this TU at
+    #    -O2; build it at -O1 first, then let make build the rest at default -O.
+    ./configure \
+      --prefix=/usr \
+      --host=aarch64-pc-cygwin \
+      --build=${CHOST} \
+      --without-libintl-prefix \
+      --enable-static \
+      --enable-shared \
+      --enable-extra-encodings \
+      gl_cv_clean_version_stddef=yes \
+      am_cv_proto_iconv_arg1= \
+      am_cv_proto_iconv="extern size_t iconv (iconv_t cd, char * *inbuf, size_t *inbytesleft, char * *outbuf, size_t *outbytesleft);"
+    # The -O1 line below invokes `make -C lib` directly, bypassing the top-level
+    # `all:` target -- and `all:` carries the prerequisite that generates
+    # lib/localcharset.h. lib/Makefile's own iconv.lo rule does not list that
+    # header among its dependencies, so entering lib/ directly never triggers the
+    # delegating rule and the compile fails on the first TU. Ask for the header
+    # explicitly by name. Reproduces only when cross-compiling: a native build
+    # silently picks up the host's /usr/include/localcharset.h, which has no
+    # counterpart in the sysroot.
+    make lib/localcharset.h
+    make -C lib iconv.lo CFLAGS="-O1"
+    make
+    make DESTDIR=${srcdir}/dest install
+    return
+  fi
 
   ./configure \
     --prefix=/usr \
@@ -64,6 +141,8 @@ build() {
 }
 
 check() {
+  # target binaries can't run on the x64 (emulated) cross host
+  [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]] && return 0
   cd ${srcdir}/${pkgname}-${pkgver}
   make check
 }

@@ -5,7 +5,7 @@ pkgname=('ncurses' 'ncurses-devel')
 pkgver=6.6
 pkgrel=2
 pkgdesc="System V Release 4.0 curses emulation library"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.gnu.org/software/ncurses/"
 msys2_repository_url="https://github.com/ThomasDickey/ncurses-snapshots"
 msys2_references=(
@@ -37,8 +37,55 @@ build() {
   cd ${srcdir}/${pkgbase}-${pkgver}
   msg2 "Configuring ${pkgname} with ${CHOST}"
   local CHOST="${CHOST/-cygwin/-msys}"
+
+  local _host_args=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
+    # ncurses generates source with helper programs (make_keys/make_hash) and
+    # runs tic/infocmp during install — those must be the BUILD (x64) compiler,
+    # not the cross CC. --with-build-cc + BUILD_* flags direct that.
+    # GCC-15 is too new for some ncurses sources: force -std=gnu17.
+    _host_args=(
+      --host=aarch64-pc-cygwin
+      --with-build-cc=gcc
+      --with-build-cflags=-D_XOPEN_SOURCE_EXTENDED
+      # make_keys.c does `#include <names.c>`, and MKnames.awk emits
+      #     #define DCL(it) NCURSES_EXPORT_VAR(IT) it[]
+      # for the !BROKEN_LINKER && !USE_REENTRANT case. NCURSES_EXPORT_VAR maps to
+      # __declspec(dllimport) unless BUILDING_NCURSES is defined, so without it
+      # every array in names.c is a definition marked dllimport -- a hard error.
+      # Natively this never bites: BUILD_CPPFLAGS ends in ${CPPFLAGS}, which
+      # configure fills with -DBUILDING_NCURSES. Passing --with-build-cppflags
+      # REPLACES that value, dropping the define along with it, so the host tool
+      # only fails when cross-compiling. Put it back explicitly.
+      --with-build-cppflags="-D_XOPEN_SOURCE_EXTENDED -DBUILDING_NCURSES"
+      # install -s does NOT use the STRIP that configure detected -- it execs a
+      # program literally named `strip` from PATH, here the x64 host binutils
+      # strip, which has no pe-aarch64-little support and so reports "file format
+      # not recognized" on a correct ARM64 PE. libtool gets this right for the
+      # DLLs; only the executable install path bypasses it. Use upstream's own
+      # override rather than --disable-stripping, so the cross binaries stay
+      # stripped like the native ones instead of silently diverging in size.
+      --with-strip-program=aarch64-pc-cygwin-strip
+      --without-tests
+    )
+    # -D_GNU_SOURCE: configure's "is this the GNU C library" probe accepts glibc
+    # or newlib (`#elif __NEWLIB__ > 0`), but the cross sysroot ships
+    # include/_newlib_version.h as a 2-line dummy, so __NEWLIB__ is never defined
+    # and the probe legitimately fails -- and configure then skips defining
+    # _GNU_SOURCE (natively it says yes and adds it). In newlib's sys/features.h
+    # _GNU_SOURCE is what raises __XSI_VISIBLE to 700, and wchar.h guards
+    # wcwidth() on __XSI_VISIBLE, so the --enable-widec build loses the prototype
+    # and dies on the first TU that uses it. Define it so the feature-test level
+    # matches the native build. Not a -std=gnu17 side effect: with no flags at
+    # all __XSI_VISIBLE is still 0; the sysroot stub is the whole cause.
+    export CFLAGS="-std=gnu17 -D_GNU_SOURCE"
+    export BUILD_CC=gcc
+  fi
+
   ./configure \
     --build=${CHOST} \
+    "${_host_args[@]}" \
     --with-install-prefix=/usr \
     --without-ada \
     --with-shared \
