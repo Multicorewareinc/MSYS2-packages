@@ -8,7 +8,7 @@ _patchlevel=037 #prepare for some patches
 pkgver=${_basever}.${_patchlevel}
 pkgrel=2
 pkgdesc="The GNU Bourne Again shell"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('GPL')
 url="https://www.gnu.org/software/bash/bash.html"
 msys2_repository_url="https://git.savannah.gnu.org/cgit/bash.git"
@@ -54,6 +54,48 @@ build() {
   cd ${srcdir}/${pkgname}-$_basever
 
   export MSYSTEM=CYGWIN
+
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
+    # Uses the seed readline/ncurses/libintl/libiconv staged under the toolchain
+    # sysroot at /usr/aarch64-pc-cygwin/usr.
+    #   - GCC-15 too new for bash sources: -std=gnu89 (build + target).
+    #   - bash_cv_* : cross defaults for these AC_TRY_RUN probes are wrong.
+    #   - CFLAGS_FOR_BUILD -fcommon: build-host helpers (mkbuiltins etc.) need it
+    #     under GCC-15's default -fno-common.
+    ./configure --build=${CHOST} \
+      --host=aarch64-pc-cygwin \
+      --prefix=/usr \
+      --sysconfdir=/etc \
+      --localstatedir=/var \
+      --enable-static-link \
+      --enable-readline \
+      --without-libintl-prefix \
+      --without-libiconv-prefix \
+      --with-installed-readline \
+      --without-bash-malloc \
+      --with-curses \
+      bash_cv_dev_stdin=present \
+      bash_cv_dev_fd=standard \
+      bash_cv_wexitstatus_offset=8 \
+      bash_cv_termcap_lib=libncurses \
+      CFLAGS="-std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include -I/usr/aarch64-pc-cygwin/usr/include/ncursesw" \
+      CFLAGS_FOR_BUILD="-fcommon -std=gnu89" \
+      LDFLAGS="${LDFLAGS} -L/usr/aarch64-pc-cygwin/usr/lib"
+
+    expr ${pkgrel} > .build || :
+
+    # The test helpers recho/zecho/printenv/xcase are meant to run in the TARGET
+    # environment, but bash's Makefile builds them with CC_FOR_BUILD. Force the
+    # target CC for those so a native ARM64 testsuite can use them later.
+    make CPPFLAGS=-DWORDEXP_OPTION \
+         HISTORY_LDFLAGS= \
+         READLINE_LDFLAGS= \
+         CC_FOR_BUILD=gcc \
+         LOCAL_LDFLAGS='-Wl,--export-all,--out-implib,lib$(@:.exe=.dll.a)'
+    return
+  fi
+
   ./configure --build=${CHOST} \
     --prefix=/usr \
     --sysconfdir=/etc \
@@ -80,6 +122,8 @@ build() {
 }
 
 check() {
+  # target binaries can't run on the x64 (emulated) cross host
+  [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]] && return 0
   cd ${srcdir}/${pkgname}-$_basever
   make check
 }

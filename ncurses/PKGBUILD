@@ -7,7 +7,7 @@ _date_rev=20240831
 pkgver=${_base_ver}.${_date_rev}
 pkgrel=2
 pkgdesc="System V Release 4.0 curses emulation library"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.gnu.org/software/ncurses/"
 msys2_repository_url="https://github.com/ThomasDickey/ncurses-snapshots"
 msys2_references=(
@@ -16,17 +16,39 @@ msys2_references=(
 )
 license=('spdx:MIT')
 makedepends=('autotools' 'gcc')
-source=(https://invisible-island.net/archives/ncurses/current/${pkgbase}-${_base_ver}-${_date_rev}.tgz{,.asc}
+# invisible-island.net/archives/ncurses/current/ is a ROLLING directory: upstream
+# deletes older snapshots as new ones land, and it now carries 6.6 exclusively, so
+# this pinned 6.5-20240831 URL began returning 404.
+#
+# Substitutes checked and rejected: ncurses-6.5.tar.gz (the permanent release) is
+# snapshot 20240427, a different artifact with 335 files differing; upstream's 6.5/
+# dir keeps only the .patch.gz for aged-out snapshots; invisible-mirror.net has
+# aged out identically; and MSYS2's .src.tar.zst holds the exact tarball but
+# unpacks to a nested wrapper, so it cannot be a source= entry.
+#
+# ncurses-snapshots is upstream's own git mirror of these snapshots and is already
+# this recipe's msys2_repository_url. Tag v6_5_20240831 extracts to a tree
+# byte-identical to the pinned tarball (verified with `diff -rq`: 0 differences
+# across 1250 files); only the archive framing differs, hence the new checksum and
+# the ${_gh_dir} rename below.
+_gh_dir=ncurses-snapshots-${_base_ver//./_}_${_date_rev}
+source=(${pkgbase}-${_base_ver}-${_date_rev}.tar.gz::https://codeload.github.com/ThomasDickey/ncurses-snapshots/tar.gz/refs/tags/v${_base_ver//./_}_${_date_rev}
         "ncurses-6.3-pkgconfig.patch"
         "ncurses-6.3-cflags-private.patch")
-sha256sums=('685161fec9c20c0896f6d7569f8d1cba9124a1884d3d8be527253a773b787577'
-            'SKIP'
+sha256sums=('c601c2ee55f0402d846f3b08782634760b6a342f3a9992e40237398912cfa49a'
             'b8544a607dfbeffaba2b087f03b57ed1fa81286afca25df65f61b04b5f3b3738'
             '3107029dfb807e338d34641d78329cd6725c58e6b873352621f4b9611a8380bf')
-validpgpkeys=('19882D92DDA4C400C22C0D56CC2AF4472167BE03')  # "Thomas E. Dickey (self-signed w/o SHA1) <dickey@invisible-island.net>"
+# NOTE: the upstream .tgz shipped a detached .asc signed by the key below, but the
+# codeload tarball has no signature, so that key is no longer exercised here. This
+# trades a GPG check for the sha256 above; the checksum was derived from a tree
+# proven byte-identical to the signed tarball's contents, not from the new source
+# itself, so it still pins the same code. Restore .asc verification if upstream
+# ever republishes the dated snapshots. Key kept for reference / future revert:
+#   19882D92DDA4C400C22C0D56CC2AF4472167BE03
+#   "Thomas E. Dickey (self-signed w/o SHA1) <dickey@invisible-island.net>"
 
 prepare() {
-  cd ${srcdir}/${pkgbase}-${_base_ver}-${_date_rev}
+  cd ${srcdir}/${_gh_dir}
 
   # do not leak build-time LDFLAGS into the pkgconfig files:
   # https://bugs.archlinux.org/task/68523
@@ -36,10 +58,56 @@ prepare() {
 }
 
 build() {
-  cd ${srcdir}/${pkgbase}-${_base_ver}-${_date_rev}
+  cd ${srcdir}/${_gh_dir}
+
+  local _host_args=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
+    # ncurses generates source with helper programs (make_keys/make_hash) and
+    # runs tic/infocmp during install — those must be the BUILD (x64) compiler,
+    # not the cross CC. --with-build-cc + BUILD_* flags direct that.
+    # GCC-15 is too new for some ncurses sources: force -std=gnu17.
+    _host_args=(
+      --host=aarch64-pc-cygwin
+      --with-build-cc=gcc
+      --with-build-cflags=-D_XOPEN_SOURCE_EXTENDED
+      # make_keys.c does `#include <names.c>`, and MKnames.awk emits
+      #     #define DCL(it) NCURSES_EXPORT_VAR(IT) it[]
+      # for the !BROKEN_LINKER && !USE_REENTRANT case. NCURSES_EXPORT_VAR maps to
+      # __declspec(dllimport) unless BUILDING_NCURSES is defined, so without it
+      # every array in names.c is a definition marked dllimport -- a hard error.
+      # Natively this never bites: BUILD_CPPFLAGS ends in ${CPPFLAGS}, which
+      # configure fills with -DBUILDING_NCURSES. Passing --with-build-cppflags
+      # REPLACES that value, dropping the define along with it, so the host tool
+      # only fails when cross-compiling. Put it back explicitly.
+      --with-build-cppflags="-D_XOPEN_SOURCE_EXTENDED -DBUILDING_NCURSES"
+      # install -s does NOT use the STRIP that configure detected -- it execs a
+      # program literally named `strip` from PATH, here the x64 host binutils
+      # strip, which has no pe-aarch64-little support and so reports "file format
+      # not recognized" on a correct ARM64 PE. libtool gets this right for the
+      # DLLs; only the executable install path bypasses it. Use upstream's own
+      # override rather than --disable-stripping, so the cross binaries stay
+      # stripped like the native ones instead of silently diverging in size.
+      --with-strip-program=aarch64-pc-cygwin-strip
+      --without-tests
+    )
+    # -D_GNU_SOURCE: configure's "is this the GNU C library" probe accepts glibc
+    # or newlib (`#elif __NEWLIB__ > 0`), but the cross sysroot ships
+    # include/_newlib_version.h as a 2-line dummy, so __NEWLIB__ is never defined
+    # and the probe legitimately fails -- and configure then skips defining
+    # _GNU_SOURCE (natively it says yes and adds it). In newlib's sys/features.h
+    # _GNU_SOURCE is what raises __XSI_VISIBLE to 700, and wchar.h guards
+    # wcwidth() on __XSI_VISIBLE, so the --enable-widec build loses the prototype
+    # and dies on the first TU that uses it. Define it so the feature-test level
+    # matches the native build. Not a -std=gnu17 side effect: with no flags at
+    # all __XSI_VISIBLE is still 0; the sysroot stub is the whole cause.
+    export CFLAGS="-std=gnu17 -D_GNU_SOURCE"
+    export BUILD_CC=gcc
+  fi
 
   ./configure \
     --build=${CHOST} \
+    "${_host_args[@]}" \
     --with-install-prefix=/usr \
     --without-ada \
     --with-shared \
@@ -72,6 +140,21 @@ build() {
     --with-build-cflags=-D_XOPEN_SOURCE_EXTENDED \
     --with-pkg-config-libdir=/usr/lib/pkgconfig
 
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # CF_INSTALL_OPT_STRIP_PROG only honours --with-strip-program if it can prove
+    # the installer supports it, and on failure it emits a mere AC_MSG_WARN,
+    # quietly resets with_strip_program=no and runs the host strip again -- so the
+    # fix would vanish with only a warning. Assert it reached INSTALL_OPT_S.
+    # progs/Makefile is the only place @INSTALL_OPT_S@ is substituted; the
+    # top-level Makefile does not carry it, so do not check there.
+    if ! grep -q 'strip-program=.*aarch64-pc-cygwin-strip' progs/Makefile; then
+      echo "==> ERROR: --with-strip-program did not take effect:" >&2
+      grep -n '^INSTALL_PROG' progs/Makefile >&2 || true
+      return 1
+    fi
+    echo "==> ok: install -s will use aarch64-pc-cygwin-strip"
+  fi
+
   make
   make DESTDIR=${srcdir}/dest install
 }
@@ -87,7 +170,7 @@ package_ncurses() {
   cp -rf $srcdir/dest/usr/share ${pkgdir}/usr/
 
   # install license, rip it from the readme
-  cd ${srcdir}/${pkgname}-${_base_ver}-${_date_rev}
+  cd ${srcdir}/${_gh_dir}
   install -dm755 ${pkgdir}/usr/share/licenses/${pkgname}
   grep -B 100 '$Id' README > ${pkgdir}/usr/share/licenses/${pkgname}/license.txt
 }
