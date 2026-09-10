@@ -68,6 +68,47 @@ namespace std {
 typedef __SIZE_TYPE__ size_t;
 typedef __PTRDIFF_TYPE__ ptrdiff_t;
 }
+
+// version-gated macros used by the GCC 17 libstdc++ headers
+#ifndef _GLIBCXX_CONSTEXPR
+#  define _GLIBCXX_CONSTEXPR constexpr
+#endif
+#ifndef _GLIBCXX_USE_CONSTEXPR
+#  define _GLIBCXX_USE_CONSTEXPR constexpr
+#endif
+#ifndef _GLIBCXX14_CONSTEXPR
+#  define _GLIBCXX14_CONSTEXPR constexpr
+#endif
+#ifndef _GLIBCXX17_CONSTEXPR
+#  define _GLIBCXX17_CONSTEXPR constexpr
+#endif
+#ifndef _GLIBCXX20_CONSTEXPR
+#  define _GLIBCXX20_CONSTEXPR constexpr
+#endif
+#ifndef _GLIBCXX23_CONSTEXPR
+#  define _GLIBCXX23_CONSTEXPR constexpr
+#endif
+#ifndef _GLIBCXX26_CONSTEXPR
+#  define _GLIBCXX26_CONSTEXPR constexpr
+#endif
+#ifndef _GLIBCXX_NOEXCEPT
+#  define _GLIBCXX_NOEXCEPT noexcept
+#endif
+#ifndef _GLIBCXX_NOEXCEPT_IF
+#  define _GLIBCXX_NOEXCEPT_IF(X) noexcept(X)
+#endif
+#ifndef _GLIBCXX_PURE
+#  define _GLIBCXX_PURE
+#endif
+#ifndef _GLIBCXX_CONST
+#  define _GLIBCXX_CONST
+#endif
+#ifndef _GLIBCXX_DEPRECATED
+#  define _GLIBCXX_DEPRECATED
+#endif
+#ifndef _GLIBCXX_ABI_TAG_CXX11
+#  define _GLIBCXX_ABI_TAG_CXX11
+#endif
 #endif
 CXXCONFIG
 
