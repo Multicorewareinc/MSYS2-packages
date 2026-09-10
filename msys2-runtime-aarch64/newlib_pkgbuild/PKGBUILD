@@ -79,15 +79,20 @@ CEOF
 
   # --- Real: crtbegin.o / crtend.o ---
   # These come from libgcc (cross-msysarm64-gcc-stage1), NOT stubs.
-  cp /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/crtbegin.o \
+  # Resolve gcc's private dir from the compiler rather than hardcoding a version:
+  # the installed dir tracks the compiler (15.0.1 -> 17.0.0 when the toolchain
+  # moved to upstream GCC), and a stale literal makes every cp below fail with
+  # "No such file or directory" before anything is built.
+  _gccdir="$(dirname "$(aarch64-pc-cygwin-gcc -print-libgcc-file-name)")"
+  cp "${_gccdir}"/crtbegin.o \
     /usr/aarch64-pc-cygwin/lib/crtbegin.o
-  cp /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/crtend.o \
+  cp "${_gccdir}"/crtend.o \
     /usr/aarch64-pc-cygwin/lib/crtend.o
   echo "crtbegin.o / crtend.o from libgcc installed"
 
   # --- Real: libgcc.a ---
   # From cross-msysarm64-gcc-stage1. Copy to sysroot/lib for linker discovery.
-  cp /usr/lib/gcc/aarch64-pc-cygwin/15.0.1/libgcc.a \
+  cp "${_gccdir}"/libgcc.a \
     /usr/aarch64-pc-cygwin/lib/libgcc.a
   echo "libgcc.a from gcc-stage1 installed"
 
@@ -123,7 +128,7 @@ CEOF
   # libstdc++ wrappers for C headers shadow newlib headers in the sysroot.
   # Remove them so winsup sees newlib's versions, not glibc-oriented wrappers.
   for f in fenv.h stdlib.h alloca.h unistd.h; do
-    _wrapper="/usr/lib/gcc/aarch64-pc-cygwin/15.0.1/include/c++/${f}"
+    _wrapper="${_gccdir}/include/c++/${f}"
     if [ -f "${_wrapper}" ] && [ ! -f "${_wrapper}.bak" ]; then
       mv "${_wrapper}" "${_wrapper}.bak"
       echo "Moved shadowing header: ${f}"
@@ -196,8 +201,9 @@ build() {
 
   mkdir -p ${srcdir}/runtime-build
   cd ${srcdir}/runtime-build
-  GCC_VER=15.0.1
-  GCC_BASE=/usr/lib/gcc/aarch64-pc-cygwin/${GCC_VER}
+  # Derived, not hardcoded - see the crtbegin note in prepare().
+  GCC_BASE="$(dirname "$(aarch64-pc-cygwin-gcc -print-libgcc-file-name)")"
+  GCC_VER="$(basename "${GCC_BASE}")"
 
   # Sysroot-style include (merged newlib + cygwin)
   SYSROOT_INC=/usr/aarch64-pc-cygwin/include

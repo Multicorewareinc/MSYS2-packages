@@ -256,7 +256,11 @@ build() {
   # build tree, not the sysroot: cross-msysarm64-runtime overwrites the sysroot
   # libc.a with the DLL IMPORT library (t-msys_2_0_dll_*.o thunks), and linking
   # the DLL against its own import stubs fails with thousands of __imp_ refs.
-  _nlbuild="${startdir}/newlib-pkgbuild/src/runtime-build/${_target}/newlib"
+  # NB: this package's newlib sub-recipe directory is newlib_pkgbuild (underscore),
+  # unlike cross-msysarm64 stage-2 where it is newlib-pkgbuild.  build_msys.sh here
+  # uses the underscore form too; the hyphen was a copy-paste from the stage-2
+  # recipe and made this check fail with "newlib build tree not found".
+  _nlbuild="${startdir}/newlib_pkgbuild/src/runtime-build/${_target}/newlib"
   if [ ! -d "${_nlbuild}" ]; then
     echo "FATAL: newlib build tree not found at ${_nlbuild}" >&2; return 1
   fi
