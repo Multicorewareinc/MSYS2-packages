@@ -26,7 +26,7 @@ makedepends=(
   "autotools"
 )
 source=(
-  "${_realname}::git+https://github.com/mayankag-qti/msys2-runtime-arm64#branch=arm64/qcom-runtime"
+  "${_realname}::git+https://github.com/Multicorewareinc/msys2-runtime#branch=runtime-upstream-9-sep-nomsys"
 )
 sha256sums=('SKIP')
 
