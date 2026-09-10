@@ -1,34 +1,57 @@
 # Maintainer: Windows on ARM Experiments
 pkgname="cross-msysarm64-w32api-headers"
 pkgver=13.0.0
-pkgrel=8
+pkgrel=9
 pkgdesc="Win32 API headers for aarch64-pc-cygwin sysroot (WoA)"
 arch=('x86_64')
-url="https://github.com/Windows-on-ARM-Experiments/mingw-woarm64"
+url="https://www.mingw-w64.org/"
 license=('custom')
 options=('!strip' '!buildflags')
 
 makedepends=("git" "autotools")
 
+# Official mingw-w64, pinned to the commit the Windows-on-ARM fork branched
+# from; our AArch64 changes ride on top as an explicit patch series.
+_upstream_commit=5751d69c85816cfd42418ac3c668b4c96566f047
 source=(
-  "mingw-w64::git+https://github.com/Windows-on-ARM-Experiments/mingw-woarm64.git"
-  0001-basetsd-aarch64-64bit-pointers.patch
+  "mingw-w64::git+https://github.com/mingw-w64/mingw-w64.git#commit=${_upstream_commit}"
+  woarm64-0001-Enable-cross-compiler-gcc-aarch64-pe-build.patch
+  woarm64-0002-Fix-formatting-of-floats-for-aarch64.patch
+  woarm64-0003-Fix-typo-in-winnt.h-2.patch
+  woarm64-0004-Fix-undefined-reference-to-_environ-for-libarm64-3.patch
+  woarm64-0005-Fix-reading-double-from-a-string-on-aarch64-4.patch
+  woarm64-0006-Fix-251fc7e1c3bd3509e291c1862ee745fce8550360-to-fix-.patch
+  woarm64-0007-Add-aarch64-pc-cygwin-target.patch
+  woarm64-0008-Fix-relocations-in-dynamic-linking-9.patch
+  woarm64-0009-basetsd-aarch64-64bit-pointers.patch
 )
 
 sha256sums=('SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
             'SKIP')
 
 _target=aarch64-pc-cygwin
 _sysroot=/usr/${_target}
 
 prepare() {
-  cd ${srcdir}/mingw-w64
-  # Source-level replacement for the old post-build basetsd.h `sed`: guard the
-  # 64-bit-pointer INT_PTR/LONG_PTR/HANDLE_PTR typedefs on
-  # __aarch64__ as well as _WIN64, since the GNU aarch64-pc-cygwin toolchain does
-  # not predefine _WIN64. A named, reviewable, upstreamable patch.
-  git apply --whitespace=fix \
-    "${srcdir}"/0001-basetsd-aarch64-64bit-pointers.patch
+  cd "${srcdir}/mingw-w64"
+  # Windows-on-ARM enablement, carried as patches rather than a fork branch:
+  # 0001-0008 are the Windows-on-ARM-Experiments/mingw-woarm64 commits on top
+  # of ${_upstream_commit}; 0009 is ours - it guards the 64-bit-pointer
+  # INT_PTR/LONG_PTR/HANDLE_PTR typedefs on __aarch64__ as well as _WIN64,
+  # since the GNU aarch64-pc-cygwin toolchain does not predefine _WIN64.
+  local _p
+  for _p in "${srcdir}"/woarm64-*.patch; do
+    msg2 "Applying $(basename "${_p}")"
+    git apply "${_p}" || return 1
+  done
 }
 
 
@@ -76,7 +99,7 @@ package() {
   #   ${pkgdir}${_sysroot}/sys-include/
 
   # NOTE: basetsd.h's 64-bit-pointer guard is now fixed at the source level in
-  # prepare() (0001-basetsd-aarch64-64bit-pointers.patch) instead of a post-build
+  # prepare() (woarm64-0009-basetsd-aarch64-64bit-pointers.patch) instead of a post-build
   # `sed` here.
 
   # With the headers under include/w32api/ there is no file conflict with
