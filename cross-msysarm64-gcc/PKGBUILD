@@ -30,6 +30,10 @@ makedepends=(
                                     # with "stage-1 runtime artifact missing".
   "cross-msysarm64-runtime-devel"   # real msys2-runtime headers + libcygwin.a
   "cross-msysarm64-w32api-headers"
+  "cross-msysarm64-windows-default-manifest"  # default-manifest.o.  The target
+                                    # link spec references it, so every
+                                    # configure-target-* link test needs it:
+                                    #   ld: cannot find default-manifest.o
   "cross-msysarm64-w32api-runtime"  # Win32 import libs (libkernel32/user32/
                                     # advapi32/shell32/ntdll.a).  The target
                                     # libs configure link-tests against them, so
