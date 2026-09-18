@@ -51,7 +51,15 @@ fi
 say "source zip    : $ZIP ($(stat -c%s "$ZIP") bytes)"
 
 rm -rf "$OUT"; mkdir -p "$OUT"
-unzip -q "$ZIP" -d "$OUT" || die "unzip failed"
+# unzip is not in a base MSYS2 install; bsdtar is (makepkg depends on it) and
+# reads zip archives, so prefer whichever is present.
+if command -v unzip >/dev/null 2>&1; then
+  unzip -q "$ZIP" -d "$OUT" || die "unzip failed"
+elif command -v bsdtar >/dev/null 2>&1; then
+  ( cd "$OUT" && bsdtar -xf "$ZIP" ) || die "bsdtar failed"
+else
+  die "need unzip or bsdtar to unpack $ZIP"
+fi
 say "unpacked to   : $OUT"
 
 BIN="$OUT/usr/bin"

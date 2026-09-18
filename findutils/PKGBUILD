@@ -40,6 +40,14 @@ build() {
     # gnulib probes several behaviours with AC_RUN_IFELSE, which cannot run a
     # target binary on the x64 build host.  Seed the ones whose cross default
     # is wrong for this target, the same way coreutils does.
+    #
+    # -no-integrated-cpp: gl/lib/mountlist.c hangs cc1 forever otherwise -- no
+    # diagnostic, no progress, at -O0 and -O2 alike, so it is the front end and
+    # not the optimizer.  A separate cpp pass compiles it in seconds.  This is
+    # the same GCC-17 AArch64 lex-while-parse bug msys2-runtime-aarch64 already
+    # works around for libc/minires-os-if.o, reached here by a different file.
+    # Applied package-wide rather than per-object because findutils has no
+    # per-file rule hook; the cost is one extra process per translation unit.
     ./configure \
       --build=${CHOST} \
       --host=aarch64-pc-cygwin \
@@ -50,7 +58,7 @@ build() {
       DEFAULT_ARG_SIZE="(32u*1024)" \
       gl_cv_func_strtod_works=yes \
       gl_cv_func_working_mktime=yes \
-      CFLAGS="-std=gnu17 -Wno-misleading-indentation -I/usr/aarch64-pc-cygwin/usr/include" \
+      CFLAGS="-std=gnu17 -no-integrated-cpp -I/usr/aarch64-pc-cygwin/usr/include" \
       LDFLAGS="${LDFLAGS} -L/usr/aarch64-pc-cygwin/usr/lib"
     make
     return
