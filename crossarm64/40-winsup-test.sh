@@ -101,8 +101,25 @@ fi
 rm -f "$RB/cygserver/msys-2.0.dll"
 
 # 6. start cygserver for the SysV IPC tests
+#
+# Stop it again on exit if we were the ones who started it.  cygserver from
+# THIS runtime keeps running against the host MSYS2 installation otherwise,
+# and two runtimes sharing one shared-memory namespace corrupts it: the
+# symptom is every compiler on the machine failing with
+#   cc1.exe: error while loading shared libraries: ?: cannot open shared object file
+# which needs a reboot (or rebaseall) to clear.
+_started_cygserver=0
+_stop_cygserver() {
+  [ "${_started_cygserver}" = "1" ] || return 0
+  # taskkill, not kill: this cygserver belongs to the runtime under test, so
+  # the host shell cannot signal it as its own process.
+  taskkill //F //IM cygserver.exe >/dev/null 2>&1 \
+    && say "cygserver stopped" || warn "could not stop cygserver -- kill it before building"
+}
+trap _stop_cygserver EXIT INT TERM
 if ! ps -W 2>/dev/null | grep -iq '[c]ygserver'; then
   ( "$RB/cygserver/cygserver.exe" -d -e > /tmp/cygserver.log 2>&1 & )
+  _started_cygserver=1
   sleep 2
 fi
 if ps -W 2>/dev/null | grep -iq '[c]ygserver'; then say "cygserver up"
