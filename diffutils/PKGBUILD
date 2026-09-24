@@ -2,9 +2,9 @@
 
 pkgname=diffutils
 pkgver=3.12
-pkgrel=1
+pkgrel=2
 pkgdesc="Utility programs used for creating patch files"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.gnu.org/software/diffutils"
 msys2_repository_url='https://cgit.git.savannah.gnu.org/cgit/diffutils.git'
 msys2_references=(
@@ -25,8 +25,29 @@ build() {
   # make sure tests are running OK
   sed -i "s/mkdir -m 0700/mkdir /" tests/init.sh
 
+  # aarch64-pc-cygwin cross: --host stops configure probing with the build
+  # compiler, and libintl/libiconv come from the toolchain sysroot.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    # gnulib decides <stddef.h> is not idempotent on this target and sets
+    # STDDEF_NOT_IDEMPOTENT=1, which compiles its replacement header with
+    # the special-invocation block switched off ("&& !1").  newlib needs that
+    # block: sys/_types.h does #define __need_wint_t before #include
+    # <stddef.h>, so with it disabled wint_t is never defined and every
+    # translation unit fails with "unknown type name 'wint_t'".  The check it
+    # guards only matters for a -std=gnu23 -Wsystem-headers warning.
+    _xargs+=(gl_cv_clean_version_stddef=yes)
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+    # gnulib probes strcasecmp with AC_RUN_IFELSE.  It already carries a
+    # cross-compile guess for cygwin ("no", i.e. use the replacement) but
+    # still errors out rather than using it, so hand it the same answer the
+    # native build reaches.
+    _xargs+=(gl_cv_func_strcasecmp_works=no)
+  fi
   ./configure \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --prefix=/usr \
     --without-libiconv-prefix \
     --without-libintl-prefix
