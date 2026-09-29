@@ -48,7 +48,7 @@ source=(
   # Upstream GCC, pinned to the commit our AArch64 series is based on.
   # Our changes are the woarm64-*.patch series below, generated from
   # gcc-woarm64 aarch64-on-latest with  git format-patch 001f9af67f1..HEAD
-  "${_realname}::git+https://gcc.gnu.org/git/gcc.git#commit=${_upstream_commit}"
+  "${_realname}::git+https://github.com/gcc-mirror/gcc.git#commit=${_upstream_commit}"
   woarm64-0001-aarch64-Bypass-some-warnings-in-MinGW.patch
   woarm64-0002-aarch64-Add-stdcall-and-cdecl-attributes.patch
   woarm64-0003-aarch64-Add-SEH-stack-unwinding-and-C-exceptions.patch
