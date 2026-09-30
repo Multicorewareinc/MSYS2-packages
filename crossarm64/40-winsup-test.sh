@@ -101,8 +101,18 @@ fi
 rm -f "$RB/cygserver/msys-2.0.dll"
 
 # 6. start cygserver for the SysV IPC tests
+#
+# Run it FROM $runtime_root, not from $RB/cygserver.  Windows searches the
+# executable's own directory for DLLs, not PATH, so a cygserver left in the
+# build tree finds no msys-2.0.dll at all once the stray copy above is
+# removed -- it dies with "couldn't create signal pipe".  Even if it did
+# start, the SysV IPC namespace is keyed on a hash of the DLL's full path,
+# so a daemon and a client resolving it from different directories land in
+# different namespaces and msgget/semget/shmget all fail.  Copying the
+# binary next to the runtime the tests use makes both sides agree.
+cp -f "$RB/cygserver/cygserver.exe" "$runtime_root/" 2>/dev/null \n  || warn "could not stage cygserver into $runtime_root"
 if ! ps -W 2>/dev/null | grep -iq '[c]ygserver'; then
-  ( "$RB/cygserver/cygserver.exe" -d -e > /tmp/cygserver.log 2>&1 & )
+  ( "$runtime_root/cygserver.exe" -d -e > /tmp/cygserver.log 2>&1 & )
   sleep 2
 fi
 if ps -W 2>/dev/null | grep -iq '[c]ygserver'; then say "cygserver up"
