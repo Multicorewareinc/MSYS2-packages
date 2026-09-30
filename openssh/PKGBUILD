@@ -2,7 +2,7 @@
 
 pkgname=openssh
 pkgver=10.5p1
-pkgrel=3
+pkgrel=4
 pkgdesc='Free version of the SSH connectivity tools'
 url='https://www.openssh.com/portable.html'
 msys2_changelog_url="https://www.openssh.com/releasenotes.html"
@@ -20,12 +20,14 @@ makedepends=('heimdal-devel' 'libedit-devel' 'libxcrypt-devel' 'libfido2-devel' 
 source=("https://ftp.openbsd.org/pub/OpenBSD/OpenSSH/portable/${pkgname}-${pkgver}.tar.gz"{,.asc}
         openssh-7.3p1-msys2.patch
         openssh-7.3p1-msys2-setkey.patch
-        openssh-7.3p1-msys2-drive-name-in-path.patch)
+        openssh-7.3p1-msys2-drive-name-in-path.patch
+        aarch64-reap-session-children.py)
 sha256sums=('d44d28a839ea9daf969cc69150fde59910b2b39361dad81a3bd6cbd19218db11'
             'SKIP'
             '4ac8da8f0933eae61e3b973e627c0c152ea4168c28cdc27066f9a5d54432f578'
             '25079cf4a10c1ab70d60302bccaabee513762520dffd7c35285f7aae3ea36087'
-            '903b3eee51e492a125cab9c724ad967450307d53e457f025e4432b81cb145af5')
+            '903b3eee51e492a125cab9c724ad967450307d53e457f025e4432b81cb145af5'
+            '8ff2d87be0c95cd064d0b28195498c82cd42362c5bff405bc24288aaf92eaadd')
 validpgpkeys=('7168B983815A5EEF59A4ADFD2A3F414E736060BA') # Damien Miller <djm@mindrot.org>
 
 backup=('etc/ssh/ssh_config' 'etc/ssh/sshd_config')
@@ -35,6 +37,12 @@ prepare() {
   patch -p1 -i ${srcdir}/openssh-7.3p1-msys2.patch
   patch -p1 -i ${srcdir}/openssh-7.3p1-msys2-setkey.patch
   patch -p1 -i ${srcdir}/openssh-7.3p1-msys2-drive-name-in-path.patch
+
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # sshd here intermittently misses the session child exiting, so the client
+    # never receives exit-status and hangs.  See the script for measurements.
+    python "${srcdir}/aarch64-reap-session-children.py"
+  fi
 
   autoreconf -fvi
 }
