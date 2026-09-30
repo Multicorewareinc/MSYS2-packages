@@ -2,7 +2,7 @@
 
 pkgname=openssh
 pkgver=10.5p1
-pkgrel=2
+pkgrel=3
 pkgdesc='Free version of the SSH connectivity tools'
 url='https://www.openssh.com/portable.html'
 msys2_changelog_url="https://www.openssh.com/releasenotes.html"
@@ -13,7 +13,7 @@ msys2_references=(
   'gentoo: net-misc/openssh'
 )
 license=('spdx:LicenseRef-OpenSSH')
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 groups=('net-utils')
 depends=('heimdal' 'libedit' 'libxcrypt' 'libfido2' 'openssl')
 makedepends=('heimdal-devel' 'libedit-devel' 'libxcrypt-devel' 'libfido2-devel' 'openssl-devel' 'autotools' 'gcc' 'groff')
@@ -51,15 +51,36 @@ build() {
 
   export MSYSTEM=CYGWIN
   TEST_SSH_UTF8=no \
+  # aarch64-pc-cygwin cross: --host stops configure probing with the build
+  # compiler, and kerberos5/libedit/openssl come from the toolchain sysroot.
+  local _xargs=(--build=${CHOST})
+  local _krb5=/usr
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+    _krb5=/usr/aarch64-pc-cygwin/usr
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+    # openssh hardcodes LIBS="$LIBS /usr/lib/textreadmode.o" for Cygwin.  That
+    # is the host x86-64 object, so every configure link test fails with "file
+    # format not recognized"; and the target one cannot simply be substituted
+    # either, because our cross-built ncurses DLL exports cygwin_premain0 and
+    # the two then collide:
+    #   multiple definition of `cygwin_premain0'; libcurses.dll.a(...)
+    # Drop it here and fix ncurses separately -- it should not be exporting
+    # those symbols.  Without it openssh does not force text mode on stdio,
+    # which is a behavioural difference from the native package.
+    sed -i "s|LIBS=\"\$LIBS /usr/lib/textreadmode.o\"|:|" configure
+  fi
+
   ./configure \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --prefix=/usr \
     --sbindir=/usr/bin \
     --libexecdir=/usr/lib/ssh \
     --sysconfdir=/etc/ssh \
     --localstatedir=/var \
     --with-libedit \
-    --with-kerberos5=/usr \
+    --with-kerberos5=${_krb5} \
     --with-security-key-builtin \
     --without-hardening \
     --disable-strip
