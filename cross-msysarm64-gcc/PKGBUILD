@@ -416,4 +416,27 @@ package() {
   find ${pkgdir}/usr/bin -name "*.exe" -exec strip -s {} \; 2>/dev/null || true
 
 #   # Do NOT strip target libraries — they need relocs for the target
+
+  # Install a default specs file that clears HIGH_ENTROPY_VA on every link.
+  #
+  # The cygheap must be reserved at a FIXED address -- it holds internal
+  # pointers, so a forked child cannot relocate it -- and needs a contiguous
+  # 8 GiB at 0x800000000-0xA00000000.  HIGH_ENTROPY_VA lets the loader place
+  # allocations anywhere in the 128 TB address space, including inside that
+  # window; when one lands there the reservation fails and the forked child
+  # dies with 0xC0000005 ("flaky fork", msys2-runtime#7).
+  #
+  # The cross profile passes -Wl,--disable-high-entropy-va, but any recipe that
+  # sets its own LDFLAGS drops it again -- which is how msys-crypto-3.dll,
+  # msys-ssl-3.dll and msys-z.dll came to ship with the bit set while
+  # sshd.exe itself did not, breaking the fork sshd does per connection.
+  # gcc reads $libdir/specs automatically, so putting the flag in the *link*
+  # spec applies it to every link regardless of flags.
+  local _gccdir _specs
+  _gccdir="$(dirname "$("${pkgdir}/usr/bin/${_target}-gcc" -print-libgcc-file-name)")"
+  _specs="${pkgdir}${_gccdir}/specs"   # _gccdir is an absolute target path
+  install -d "$(dirname "${_specs}")"
+  "${pkgdir}/usr/bin/${_target}-gcc" -dumpspecs     | awk '/^\*link:$/{print; getline; print $0 "   --disable-high-entropy-va"; next} {print}'     > "${_specs}"
+  grep -q -- '--disable-high-entropy-va' "${_specs}" ||
+    { echo "==> ERROR: specs file did not get --disable-high-entropy-va" >&2; return 1; }
 }
