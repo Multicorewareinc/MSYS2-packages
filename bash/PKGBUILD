@@ -143,7 +143,7 @@ build() {
       bash_cv_wexitstatus_offset=8 \
       bash_cv_termcap_lib=libncurses \
       bash_cv_getcwd_malloc=yes \
-      CFLAGS="-O1 -std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include -I/usr/aarch64-pc-cygwin/usr/include/ncursesw" \
+      CFLAGS="-O1 -std=gnu89 -I/usr/aarch64-pc-cygwin/usr/include -I/usr/aarch64-pc-cygwin/usr/include/ncurses" \
       CFLAGS_FOR_BUILD="-fcommon -std=gnu89" \
       LDFLAGS="${LDFLAGS} -L/usr/aarch64-pc-cygwin/usr/lib"
 
