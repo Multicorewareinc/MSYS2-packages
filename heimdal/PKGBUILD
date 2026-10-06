@@ -81,6 +81,7 @@ _build_native_tools() {
     ./configure --build=${CHOST} --host=${CHOST} --prefix=/usr \
       --disable-shared --enable-static --without-x \
       --disable-kcm --disable-ndbm-db --disable-heimdal-documentation \
+      --disable-dependency-tracking \
       --without-openssl --without-libedit --without-sqlite3 \
       ac_cv_func_vasnprintf=no ac_cv_func_asnprintf=no \
       CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion -D_GNU_SOURCE -include sys/ioctl.h" \
@@ -93,6 +94,12 @@ _build_native_tools() {
 }
 
 build() {
+  # libtool needs LT_CYGPATH to map the uninstalled .libs paths when
+  # cross-building; without it the asn1/roken links fail with
+  #   ld: cannot find -lasn1
+  # makepkg sanitises the environment, so exporting it outside has no
+  # effect -- it has to be set here, the same way db/PKGBUILD does.
+  export LT_CYGPATH=/usr/bin/cygpath
   cd ${srcdir}/heimdal-${pkgver}
 
   # For the aarch64-pc-cygwin cross build the host/target triple changes and
@@ -157,6 +164,7 @@ build() {
     --disable-kcm \
     --disable-ndbm-db \
     --disable-heimdal-documentation \
+    --disable-dependency-tracking \
     ac_cv_header_winsock2_h=no \
     ac_cv_header_ws2tcpip_h=no \
     "${_xvars[@]}"
