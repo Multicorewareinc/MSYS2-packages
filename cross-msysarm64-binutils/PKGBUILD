@@ -18,7 +18,7 @@ options=('staticlibs' '!distcc' '!ccache' '!buildflags')
 # series below, generated from binutils-woarm64 aarch64-on-latest with
 #   git format-patch 1469a04f309..HEAD
 _upstream_commit=1469a04f30917ef6a2bf4afc73e442b836574563
-source=("${_realname}"::"git+https://sourceware.org/git/binutils-gdb.git#commit=${_upstream_commit}"
+source=("${_realname}"::"git+https://github.com/gnutools/binutils-gdb.git#commit=${_upstream_commit}"
         woarm64-0001-WIP-fix-to-dll-relocations.patch
         woarm64-0002-Add-error-messages-for-invalid-relocations.patch
         woarm64-0003-binutils-2.43-cygwin-config-rpath.patch.patch

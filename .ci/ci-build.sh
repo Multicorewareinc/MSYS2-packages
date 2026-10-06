@@ -85,6 +85,20 @@ pacman -R --recursive --unneeded --noconfirm --noprogressbar git python
 # Enable linting
 export MAKEPKG_LINT_PKGBUILD=1
 
+# CI reliability.
+#
+# 1. Downloads: the stock DLAGENTS retry 3 times, which is not enough for
+#    ftp.gnu.org -- a libiconv fetch failure has killed this branch's CI on
+#    the very first package. Retry harder and on every error class.
+sed -i -E "s|(--retry) 3 (--retry-delay) 3|\1 10 \2 5 --retry-all-errors --connect-timeout 30|g" /etc/makepkg.conf
+grep -q 'retry-all-errors' /etc/makepkg.conf && echo 'download retries hardened' 
+
+# 2. Share one source cache across packages: cross-msysarm64-gcc and
+#    cross-msysarm64-gcc-stage1 pull the same gcc commit, and a bare clone
+#    of it costs 25-30 minutes on a runner; without this it is paid twice.
+export SRCDEST="${PWD}/.srccache"
+mkdir -p "${SRCDEST}"
+
 message 'Building packages'
 for package in "${packages[@]}"; do
     echo "::group::[build] ${package}"
