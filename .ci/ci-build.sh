@@ -99,6 +99,14 @@ grep -q 'retry-all-errors' /etc/makepkg.conf && echo 'download retries hardened'
 export SRCDEST="${PWD}/.srccache"
 mkdir -p "${SRCDEST}"
 
+# 3. ftp.gnu.org is unreachable from the runners -- every attempt ends in
+#    'curl: (28) Failed to connect to ftp.gnu.org:443', so retries cannot
+#    help and libiconv dies before any package is built.  Point the GNU
+#    downloads at a working mirror.  The tarballs are identical, so the
+#    recorded sha256sums still apply.
+sed -i -E 's#https://ftp\.gnu\.org/(pub/)?gnu/#https://mirrors.kernel.org/gnu/#g' */PKGBUILD
+echo "GNU sources repointed at mirrors.kernel.org: $(grep -l 'mirrors.kernel.org' */PKGBUILD 2>/dev/null | wc -l) recipes"
+
 message 'Building packages'
 for package in "${packages[@]}"; do
     echo "::group::[build] ${package}"
