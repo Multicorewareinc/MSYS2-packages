@@ -77,9 +77,32 @@ for f in "$BIN"/*; do
 done
 say "swapped ARM64 : $swapped"
 
-# 2. drop the ssh/kerberos cluster
+# 1b. pull in runtime DLLs our builds need but MinGit never shipped (newer
+#     sonames such as msys-cbor-0.14, or cygncursesw6 from our ncurses).
+#     Step 1 only replaces files already in the zip; repeat until closed.
+OBJDUMP="${OBJDUMP:-aarch64-pc-cygwin-objdump}"
+added=0
+while :; do
+  new=0
+  for f in "$BIN"/*.exe "$BIN"/*.dll; do
+    case "$(file -b "$f")" in *ARM64*|*Aarch64*) ;; *) continue ;; esac
+    for d in $("$OBJDUMP" -p "$f" 2>/dev/null | awk '/DLL Name/{print $3}'); do
+      case "$d" in msys-*|cyg*) ;; *) continue ;; esac
+      [ -e "$BIN/$d" ] && continue
+      [ -f "$ROOT/usr/bin/$d" ] || { warn "$(basename "$f") needs $d, not in $ROOT/usr/bin"; continue; }
+      cp -f "$ROOT/usr/bin/$d" "$BIN/$d" && added=$((added + 1)) && new=1
+    done
+  done
+  [ $new -eq 0 ] && break
+done
+say "added deps    : $added"
+
+# 2. drop whatever of the ssh/kerberos cluster we have no ARM64 build of.
+#    Once the openssh chain is cross-built, step 1 has already swapped those
+#    in, and they stay.
 pruned=0
 for b in $PRUNE; do
+  [ -e "$ROOT/usr/bin/$b" ] && continue
   [ -e "$BIN/$b" ] && rm -f "$BIN/$b" && pruned=$((pruned + 1))
 done
 say "pruned (ssh)  : $pruned"
