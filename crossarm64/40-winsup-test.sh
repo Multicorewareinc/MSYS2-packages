@@ -110,7 +110,8 @@ rm -f "$RB/cygserver/msys-2.0.dll"
 # so a daemon and a client resolving it from different directories land in
 # different namespaces and msgget/semget/shmget all fail.  Copying the
 # binary next to the runtime the tests use makes both sides agree.
-cp -f "$RB/cygserver/cygserver.exe" "$runtime_root/" 2>/dev/null \n  || warn "could not stage cygserver into $runtime_root"
+cp -f "$RB/cygserver/cygserver.exe" "$runtime_root/" 2>/dev/null \
+  || warn "could not stage cygserver into $runtime_root"
 if ! ps -W 2>/dev/null | grep -iq '[c]ygserver'; then
   ( "$runtime_root/cygserver.exe" -d -e > /tmp/cygserver.log 2>&1 & )
   sleep 2
