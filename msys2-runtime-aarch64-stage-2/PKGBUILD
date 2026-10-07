@@ -142,8 +142,10 @@ source=(
   woarm64-0112-Cygwin-gendef-fix-SEH-directives-in-AArch64-sigdel.patch
   woarm64-0113-Cygwin-gendef-fix-AArch64-sigfe-maybe-control-flow.patch
   woarm64-0114-Cygwin-gendef-fix-AArch64-stabilize-sig-stack-lock.patch
+  woarm64-0115-Cygwin-gendef-restore-incyg-in-AArch64-longjmp-ins.patch
 )
 sha256sums=('SKIP'
+            'SKIP'
             'SKIP'
             'SKIP'
             'SKIP'
