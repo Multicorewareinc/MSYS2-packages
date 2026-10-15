@@ -4,7 +4,7 @@ _realname=gcc
 _target=aarch64-pc-cygwin
 pkgname="cross-msysarm64-${_realname}"
 pkgver=17.0.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Cross GCC stage2 for aarch64-pc-cygwin (with full runtime)"
 arch=('i686' 'x86_64')
 url="https://gcc.gnu.org"
@@ -433,8 +433,15 @@ package() {
   # gcc reads $libdir/specs automatically, so putting the flag in the *link*
   # spec applies it to every link regardless of flags.
   local _gccdir _specs
+  # The staged gcc is relocatable, so -print-libgcc-file-name already points
+  # inside ${pkgdir}; use that directory as is (prefixing ${pkgdir} again put
+  # the file at ${pkgdir}${pkgdir}/usr/lib/gcc/..., where gcc never looks).
   _gccdir="$(dirname "$("${pkgdir}/usr/bin/${_target}-gcc" -print-libgcc-file-name)")"
-  _specs="${pkgdir}${_gccdir}/specs"   # _gccdir is an absolute target path
+  case "${_gccdir}" in
+    "${pkgdir}"/usr/lib/gcc/*) ;;
+    *) echo "==> ERROR: unexpected gcc libdir ${_gccdir}" >&2; return 1 ;;
+  esac
+  _specs="${_gccdir}/specs"
   install -d "$(dirname "${_specs}")"
   "${pkgdir}/usr/bin/${_target}-gcc" -dumpspecs     | awk '/^\*link:$/{print; getline; print $0 "   --disable-high-entropy-va"; next} {print}'     > "${_specs}"
   grep -q -- '--disable-high-entropy-va' "${_specs}" ||
