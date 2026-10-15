@@ -443,7 +443,13 @@ package() {
   esac
   _specs="${_gccdir}/specs"
   install -d "$(dirname "${_specs}")"
-  "${pkgdir}/usr/bin/${_target}-gcc" -dumpspecs     | awk '/^\*link:$/{print; getline; print $0 "   --disable-high-entropy-va"; next} {print}'     > "${_specs}"
+  "${pkgdir}/usr/bin/${_target}-gcc" -dumpspecs     | awk -v w32="-L/usr/${_target}/lib/w32api" '/^\*link:$/{print; getline; print $0 "   --disable-high-entropy-va " w32; next} {print}'     > "${_specs}"
   grep -q -- '--disable-high-entropy-va' "${_specs}" ||
     { echo "==> ERROR: specs file did not get --disable-high-entropy-va" >&2; return 1; }
+  # The Win32 import libraries (libkernel32.a & co.) ship in the w32api
+  # subdirectory, which a native Cygwin gcc searches through its built-in
+  # specs but this cross gcc does not; without the -L an installed toolchain
+  # cannot link even "hello world" (cannot find -lkernel32).
+  grep -q -- "-L/usr/${_target}/lib/w32api" "${_specs}" ||
+    { echo "==> ERROR: specs file did not get the w32api library path" >&2; return 1; }
 }
