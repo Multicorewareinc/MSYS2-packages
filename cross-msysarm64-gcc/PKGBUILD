@@ -437,6 +437,7 @@ package() {
   # inside ${pkgdir}; use that directory as is (prefixing ${pkgdir} again put
   # the file at ${pkgdir}${pkgdir}/usr/lib/gcc/..., where gcc never looks).
   _gccdir="$(dirname "$("${pkgdir}/usr/bin/${_target}-gcc" -print-libgcc-file-name)")"
+  _gccdir="$(cd "${_gccdir}" && pwd)"   # resolve the usr/bin/.. it reports
   case "${_gccdir}" in
     "${pkgdir}"/usr/lib/gcc/*) ;;
     *) echo "==> ERROR: unexpected gcc libdir ${_gccdir}" >&2; return 1 ;;
