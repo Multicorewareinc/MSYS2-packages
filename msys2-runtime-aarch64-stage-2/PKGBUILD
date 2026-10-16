@@ -4,7 +4,7 @@ _realname=msys2-runtime
 pkgbase=${_realname}
 pkgname=cross-msysarm64-runtime
 pkgver=3.6.7
-pkgrel=16
+pkgrel=17
 pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-cygwin"
 arch=('x86_64')
 options=('!strip' '!buildflags')
@@ -945,6 +945,16 @@ package() {
   install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-cygwin/lib/libmsys-2.0.a"
   ln -sf libmsys-2.0.a "${pkgdir}/usr/aarch64-pc-cygwin/lib/libcygwin.a"
   echo "packaged libmsys-2.0.a (+ libcygwin.a alias)"
+
+  # --- file-mode objects: link one of these to set the default open mode
+  # (binary/text/textread/auto).  The x86_64 msys2-runtime ships them in
+  # /usr/lib; openssh links textreadmode.o on Cygwin targets.
+  for _o in automode.o binmode.o textmode.o textreadmode.o; do
+    _s="$(find "${_rb}" -path '*/cygwin/*' -name "${_o}" 2>/dev/null | head -1)"
+    [ -n "${_s}" ] || { echo "FATAL: ${_o} not found in ${_rb}"; exit 1; }
+    install -m644 "${_s}" "${pkgdir}/usr/aarch64-pc-cygwin/lib/${_o}"
+  done
+  echo "packaged automode.o binmode.o textmode.o textreadmode.o"
 
   # --- newlib libs (Phase 2): fold libc/libm/libg into this package so the
   # sysroot's newlib libs come from a package, not a hand-copy out of src/.

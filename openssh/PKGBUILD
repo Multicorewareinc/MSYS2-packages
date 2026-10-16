@@ -2,7 +2,7 @@
 
 pkgname=openssh
 pkgver=10.5p1
-pkgrel=4
+pkgrel=5
 pkgdesc='Free version of the SSH connectivity tools'
 url='https://www.openssh.com/portable.html'
 msys2_changelog_url="https://www.openssh.com/releasenotes.html"
@@ -68,16 +68,11 @@ build() {
     _krb5=/usr/aarch64-pc-cygwin/usr
     CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
     LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
-    # openssh hardcodes LIBS="$LIBS /usr/lib/textreadmode.o" for Cygwin.  That
-    # is the host x86-64 object, so every configure link test fails with "file
-    # format not recognized"; and the target one cannot simply be substituted
-    # either, because our cross-built ncurses DLL exports cygwin_premain0 and
-    # the two then collide:
-    #   multiple definition of `cygwin_premain0'; libcurses.dll.a(...)
-    # Drop it here and fix ncurses separately -- it should not be exporting
-    # those symbols.  Without it openssh does not force text mode on stdio,
-    # which is a behavioural difference from the native package.
-    sed -i "s|LIBS=\"\$LIBS /usr/lib/textreadmode.o\"|:|" configure
+    # openssh links /usr/lib/textreadmode.o on Cygwin, which is the host
+    # x86-64 object; link the target one from the toolchain sysroot instead.
+    sed -i "s|LIBS=\"\$LIBS /usr/lib/textreadmode.o\"|LIBS=\"\$LIBS /usr/aarch64-pc-cygwin/lib/textreadmode.o\"|" configure
+    grep -q 'aarch64-pc-cygwin/lib/textreadmode.o' configure ||
+      { echo "textreadmode.o substitution did not apply" >&2; return 1; }
   fi
 
   ./configure \
