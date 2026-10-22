@@ -3,7 +3,7 @@
 _realname=msys2-runtime
 pkgname="cross-msysarm64-runtime-devel"
 pkgver=3.6.10
-pkgrel=1
+pkgrel=2
 pkgdesc="Cross msys2-runtime headers for aarch64-pc-cygwin sysroot (newlib + cygwin)"
 arch=('x86_64')
 url="https://github.com/msys2/msys2-runtime"
@@ -296,6 +296,18 @@ package() {
     ${pkgdir}/${_sysroot_usr}/sys-include \
     ${pkgdir}/${_sysroot_usr}/include; do
     cp -r ${srcdir}/${_realname}/winsup/cygwin/include/. ${dest}/
+  done
+
+  # newlib's iconv.h and unctrl.h belong to libiconv and ncurses, and the
+  # native msys2-runtime-devel ships neither.  The bare include directory
+  # is searched before usr/include, so these copies would shadow the real
+  # headers that libiconv and ncurses install there.
+  for dest in \
+    ${pkgdir}/${_sysroot_bare}/sys-include \
+    ${pkgdir}/${_sysroot_bare}/include \
+    ${pkgdir}/${_sysroot_usr}/sys-include \
+    ${pkgdir}/${_sysroot_usr}/include; do
+    rm -f ${dest}/iconv.h ${dest}/unctrl.h
   done
 
   echo "--- Header install check ---"
