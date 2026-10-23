@@ -1,0 +1,172 @@
+diff --git a/rebase-db.c b/rebase-db.c
+index 4fa9b19..b399dbb 100644
+--- a/rebase-db.c
++++ b/rebase-db.c
+@@ -65,7 +65,9 @@ dump_rebasedb_header (FILE *f, img_info_hdr_t const *h)
+       ? "i386"
+       : (h->machine == IMAGE_FILE_MACHINE_AMD64
+         ? "x86_64"
+-        : "unknown")),
++        : (h->machine == IMAGE_FILE_MACHINE_ARM64
++          ? "aarch64"
++          : "unknown"))),
+       h->version,
+       (h->machine == IMAGE_FILE_MACHINE_I386 ? 8 : 12),
+       (uint64_t) h->base,
+diff --git a/rebase-dump.c b/rebase-dump.c
+index a9fd9e4..9f5c78d 100644
+--- a/rebase-dump.c
++++ b/rebase-dump.c
+@@ -135,7 +135,8 @@ load_image_info ()
+       dump_rebasedb_header (stdout, &hdr);
+     }
+   if (hdr.machine != IMAGE_FILE_MACHINE_I386 &&
+-      hdr.machine != IMAGE_FILE_MACHINE_AMD64)
++      hdr.machine != IMAGE_FILE_MACHINE_AMD64 &&
++      hdr.machine != IMAGE_FILE_MACHINE_ARM64)
+     {
+       fprintf (stderr, "%s: \"%s\" is a database file for a machine type\n"
+ 		       "I don't know about.", progname, db_file);
+diff --git a/rebase.c b/rebase.c
+index 2688798..a4b8cb2 100644
+--- a/rebase.c
++++ b/rebase.c
+@@ -57,8 +57,16 @@ char *file_list_fgets (char *buf, int size, FILE *file);
+ int file_list_fclose (FILE *file);
+ void version ();
+ 
+-#ifdef __x86_64__
+-WORD machine = IMAGE_FILE_MACHINE_AMD64;
++/* The 64 bit machine type this rebase handles: AArch64 Cygwin uses the same
++   address space layout as x86_64 Cygwin, so the two are treated alike. */
++#ifdef __aarch64__
++#define IMAGE_FILE_MACHINE_64 IMAGE_FILE_MACHINE_ARM64
++#else
++#define IMAGE_FILE_MACHINE_64 IMAGE_FILE_MACHINE_AMD64
++#endif
++
++#if defined (__x86_64__) || defined (__aarch64__)
++WORD machine = IMAGE_FILE_MACHINE_64;
+ #else
+ WORD machine = IMAGE_FILE_MACHINE_I386;
+ #endif
+@@ -98,8 +106,14 @@ unsigned int img_info_max_size = 0;
+ #endif
+ #define IMG_INFO_FILE_I386 SYSCONFDIR "/rebase.db.i386"
+ #define IMG_INFO_FILE_AMD64 SYSCONFDIR "/rebase.db.x86_64"
+-#ifdef __x86_64__
+-#define IMG_INFO_FILE IMG_INFO_FILE_AMD64
++#define IMG_INFO_FILE_ARM64 SYSCONFDIR "/rebase.db.aarch64"
++#ifdef __aarch64__
++#define IMG_INFO_FILE_64 IMG_INFO_FILE_ARM64
++#else
++#define IMG_INFO_FILE_64 IMG_INFO_FILE_AMD64
++#endif
++#if defined (__x86_64__) || defined (__aarch64__)
++#define IMG_INFO_FILE IMG_INFO_FILE_64
+ #else
+ #define IMG_INFO_FILE IMG_INFO_FILE_I386
+ #endif
+@@ -497,7 +511,8 @@ load_image_info ()
+ "%s: \"%s\" is a database file for 32 bit DLLs but\n"
+ "I'm started to handle 64 bit DLLs.  If you want to handle 32 bit DLLs,\n"
+ "use the -4 option.\n", progname, db_file);
+-      else if (hdr.machine == IMAGE_FILE_MACHINE_AMD64)
++      else if (hdr.machine == IMAGE_FILE_MACHINE_64
++	       && machine == IMAGE_FILE_MACHINE_I386)
+ 	fprintf (stderr,
+ "%s: \"%s\" is a database file for 64 bit DLLs but\n"
+ "I'm started to handle 32 bit DLLs.  If you want to handle 64 bit DLLs,\n"
+@@ -950,10 +965,11 @@ collect_image_info (const char *pathname)
+ 		 pathname);
+       return TRUE;
+     }
+-  /* We only support IMAGE_FILE_MACHINE_I386 and IMAGE_FILE_MACHINE_AMD64
+-     so far. */
++  /* We only support IMAGE_FILE_MACHINE_I386, IMAGE_FILE_MACHINE_AMD64 and
++     IMAGE_FILE_MACHINE_ARM64 so far. */
+   if (machine != IMAGE_FILE_MACHINE_I386
+-      && machine != IMAGE_FILE_MACHINE_AMD64)
++      && machine != IMAGE_FILE_MACHINE_AMD64
++      && machine != IMAGE_FILE_MACHINE_ARM64)
+     {
+       if (quiet)
+ 	fprintf (stderr, "%s: is an executable for a machine type\n"
+@@ -1244,8 +1260,8 @@ parse_args (int argc, char *argv[])
+ 	  DB_FILE = IMG_INFO_FILE_I386;
+ 	  break;
+ 	case '8':
+-	  machine = IMAGE_FILE_MACHINE_AMD64;
+-	  DB_FILE = IMG_INFO_FILE_AMD64;
++	  machine = IMAGE_FILE_MACHINE_64;
++	  DB_FILE = IMG_INFO_FILE_64;
+ 	  break;
+ 	case 'b':
+ 	  image_base = string_to_ulonglong (optarg);
+@@ -1436,12 +1452,12 @@ Usage: %s [OPTIONS] [FILE]...\n\
+ Rebase PE files, usually DLLs, to a specified address or address range.\n\
+ \n\
+   -4, --32                Only rebase 32 bit DLLs."
+-#ifndef __x86_64__
++#if !defined (__x86_64__) && !defined (__aarch64__)
+                           "  This is the default."
+ #endif
+ "\n\
+   -8, --64                Only rebase 64 bit DLLs."
+-#ifdef __x86_64__
++#if defined (__x86_64__) || defined (__aarch64__)
+                           "  This is the default."
+ #endif
+ "\n\
+diff --git a/rebaseall.in b/rebaseall.in
+index 70a471a..003d669 100644
+--- a/rebaseall.in
++++ b/rebaseall.in
+@@ -65,15 +65,21 @@ FileList="${DefaultFileList}"
+ Suffixes="${DefaultSuffixes}"
+ db_file_i386="@sysconfdir@/rebase.db.i386"
+ db_file_x86_64="@sysconfdir@/rebase.db.x86_64"
++db_file_aarch64="@sysconfdir@/rebase.db.aarch64"
++# the 64 bit database: rebase -8 picks the one for the machine it runs on
++case `uname -m` in
++    aarch64) db_file_64="${db_file_aarch64}" ;;
++    *)       db_file_64="${db_file_x86_64}" ;;
++esac
+ check_for_dash_only="yes"
+ case `uname -m` in
+     i[3456]86)
+ 	db_file="${db_file_i386}";
+ 	Mach="-4"
+ 	;;
+-    x86_64)
++    x86_64 | aarch64)
+ 	Mach="-8"
+-	db_file="${db_file_x86_64}"
++	db_file="${db_file_64}"
+ 	;;
+ esac
+ 
+@@ -89,10 +95,12 @@ case $Platform in
+     ;;
+ esac
+ 
+-# On x86_64 Cygwin, set DefaultAddressBase to 0x4:00000000
++# On x86_64 and aarch64 Cygwin, set DefaultAddressBase to 0x4:00000000
+ case $Platform in
+   cygwin | msys )
+-    [ `uname -m` = "x86_64" ] && DefaultBaseAddress=0x400000000
++    case `uname -m` in
++      x86_64 | aarch64) DefaultBaseAddress=0x400000000 ;;
++    esac
+     ;;
+   * )
+     ;;
+@@ -108,7 +116,7 @@ do
+ 	;;
+     8)
+ 	Mach="-8"
+-	db_file="${db_file_x86_64}"
++	db_file="${db_file_64}"
+ 	;;
+     b)
+ 	BaseAddress="${OPTARG}";;
