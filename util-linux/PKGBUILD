@@ -1,11 +1,15 @@
 # Maintainer: Alexey Pavlov <alexpux@gmail.com>
 
 pkgname=("util-linux" "libutil-linux" "libutil-linux-devel")
+# aarch64-pc-cygwin cross: getopt only, see build()
+if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+  pkgname=("util-linux")
+fi
 _pkgmajor=2.40
 pkgver=${_pkgmajor}.2
 pkgrel=2
 pkgdesc="Miscellaneous system utilities for Linux"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:GPL-2.0-or-later')
 url="https://www.kernel.org/pub/linux/utils/util-linux/"
 msys2_repository_url='https://github.com/util-linux/util-linux'
@@ -89,6 +93,42 @@ build() {
   CPPFLAGS+=" -D__USE_LINUX_IOCTL_DEFS"
 
   export MSYSTEM=CYGWIN
+
+  # aarch64-pc-cygwin cross: only getopt for now (it is what MinGit ships);
+  # the rest of util-linux and its libraries are not ported yet.  getopt has
+  # no --enable- option of its own and --disable-all-programs would switch it
+  # off, so configure with the defaults and make only the getopt target.
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+    ../${pkgname}-${pkgver}/configure \
+      --build=${CHOST} \
+      --host=aarch64-pc-cygwin \
+      --prefix=/usr \
+      --bindir=/usr/bin \
+      --disable-bash-completion \
+      --disable-liblastlog2 \
+      --disable-pam-lastlog2 \
+      --disable-libmount \
+      --without-python \
+      --without-systemd \
+      --without-udev \
+      --without-ncurses \
+      --without-ncursesw \
+      --without-readline \
+      --without-libz \
+      --without-libiconv-prefix \
+      --without-libintl-prefix
+    make getopt.exe
+    # through libtool: getopt.exe in the build tree is its wrapper program,
+    # the real binary is .libs/getopt.exe
+    mkdir -p ${srcdir}/dest/usr/bin
+    ./libtool --mode=install install -m755 getopt.exe ${srcdir}/dest/usr/bin/
+    install -Dm644 ../${pkgname}-${pkgver}/misc-utils/getopt.1 \
+      ${srcdir}/dest/usr/share/man/man1/getopt.1
+    return
+  fi
+
   local -a extra_config
   # 32-bit cygwin only has 32-bit time_t
   # https://github.com/msys2/MSYS2-packages/issues/4078
@@ -177,6 +217,9 @@ check() {
 package_util-linux() {
   pkgdesc="Collection of basic system utilities"
   depends=("coreutils" "file" "libutil-linux" "libiconv" "libreadline" "libsqlite")
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    depends=("libintl")
+  fi
   provides=('getopt')
   conflicts=('getopt')
   replaces=('getopt')
