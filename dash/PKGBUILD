@@ -4,7 +4,7 @@ pkgname=dash
 pkgver=0.5.13.4
 pkgrel=1
 pkgdesc="A POSIX compliant shell that aims to be as small as possible"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="http://gondor.apana.org.au/~herbert/dash/"
 msys2_repository_url="https://git.kernel.org/pub/scm/utils/dash/dash.git"
 msys2_references=(
@@ -20,11 +20,22 @@ sha256sums=('d10dfd41cda59165560db39ca915c2c4a7636fff04281d8d2df77ad92c753e2b')
 
 build() {
   cd "${srcdir}/${pkgname}-${pkgver}"
+
+  # aarch64-pc-cygwin cross: the generators (mkinit, mksyntax, ...) run
+  # during the build, so they are compiled by the build compiler.  -O1: at
+  # -O2 the cross GCC emits SEH unwind offsets its assembler rejects
+  # ("offset should be a multiple of 8", issue #38).
+  local _xargs=() _opt=-O2
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--build=${CHOST} --host=aarch64-pc-cygwin CC_FOR_BUILD=gcc)
+    _opt=-O1
+  fi
   ./configure --prefix=/usr \
       --bindir=/usr/bin \
       --mandir=/usr/share/man \
       --exec-prefix="" \
-      CFLAGS='-O2 -static-libgcc'
+      "${_xargs[@]}" \
+      CFLAGS="${_opt} -static-libgcc"
   make
 }
 
