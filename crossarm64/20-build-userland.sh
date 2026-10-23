@@ -19,7 +19,9 @@ mkdir -p "$PKGDEST" "$LOGS"
 BASH_CHAIN=(libiconv gettext ncurses readline bash gmp coreutils
             mpfr gawk sed grep diffutils findutils hexdump)
 SSH_CHAIN=(zlib openssl libxcrypt libcbor libfido2 libedit db sqlite heimdal openssh)
-ORDER=("${BASH_CHAIN[@]}" "${SSH_CHAIN[@]}")
+# the rest of what MinGit ships in usr/bin: dash, getopt (util-linux), rebase
+MINGIT_EXTRA=(dash util-linux rebase)
+ORDER=("${BASH_CHAIN[@]}" "${SSH_CHAIN[@]}" "${MINGIT_EXTRA[@]}")
 [[ $# -gt 0 ]] && ORDER=("$@")
 
 for d in "${ORDER[@]}"; do
