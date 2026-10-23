@@ -107,6 +107,23 @@ for b in $PRUNE; do
 done
 say "pruned (ssh)  : $pruned"
 
+# 2b. drop x86-64 DLLs that nothing in usr/bin imports any more: older
+#     sonames our builds replaced (msys-cbor-0.11 -> 0.14) and libraries only
+#     the x86-64 builds used (msys-gcc_s-seh-1 for sort, msys-pcre-1 for
+#     grep -P).  An x86-64 DLL cannot load with the ARM64 msys-2.0.dll anyway.
+imported=$(for f in "$BIN"/*.exe "$BIN"/*.dll; do
+             case "$(file -b "$f")" in *ARM64*|*Aarch64*) ;; *) continue ;; esac
+             "$OBJDUMP" -p "$f" 2>/dev/null | awk '/DLL Name/{print $3}'
+           done | sort -u)
+dropped=""
+for f in "$BIN"/*.dll; do
+  case "$(file -b "$f")" in *x86-64*) ;; *) continue ;; esac
+  b=$(basename "$f")
+  echo "$imported" | grep -qx "$b" && continue
+  rm -f "$f" && dropped="$dropped $b"
+done
+say "dropped unused x86-64 DLLs:${dropped:- none}"
+
 # 3. whatever is left is still x86-64 and will fail to load the ARM64 runtime
 left=""
 for b in $missing; do
