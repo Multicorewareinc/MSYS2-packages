@@ -4,7 +4,7 @@ pkgname=rebase
 pkgver=4.5.0
 pkgrel=5
 pkgdesc="The Cygwin rebase distribution contains four utilities, rebase, rebaseall, peflags, and peflagsall"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:LicenseRef-Cygwin-rebase')
 url="https://www.cygwin.com/"
 msys2_references=(
@@ -13,12 +13,13 @@ msys2_references=(
 depends=('dash')
 makedepends=('coreutils' 'git' 'grep' 'gzip' 'sed' 'autotools' 'gcc')
 # options=('debug' '!strip')
-source=(${pkgname}-${pkgver}::git://sourceware.org/git/cygwin-apps/rebase.git#tag=${pkgname}-${pkgver//./-}
+source=(${pkgname}-${pkgver}::git+https://sourceware.org/git/cygwin-apps/rebase.git#tag=${pkgname}-${pkgver//./-}
         '001-rebase-4.4.1-msys2.patch'
         '002-rebaseall-add-python-exts.patch'
         '003-allow-non-database-mode-when-__CYGWIN__-__MSYS__.patch'
         '004-msys2-usr.patch'
         '005-peflags-add-support-for-IMAGE_DLLCHARACTERISTICS_GUA.patch'
+        '006-add-aarch64-support.patch'
         'autorebase.bat'
         'rebase.hook')
 sha256sums=('f8ebc4dec0aeceecad2ed96662c83c7da5dfc3c88fddd1579ac4055756a418f9'
@@ -27,6 +28,7 @@ sha256sums=('f8ebc4dec0aeceecad2ed96662c83c7da5dfc3c88fddd1579ac4055756a418f9'
             '4b789d2f6ae7de9afd778cce5823600ee0f53590b3e70e133dcafbb583d6cbbb'
             '35484af07e1df8b00821428b774744537106f99592d849ad7db26b41f570fa8c'
             'ee06d92470a8685b29595c974aaa819da91a9d6f361f81ad3001f5e83a1ea6f5'
+            'adbe80e61655d5fc2801e0934e13b007498f007d40d8a3141aa682cb5237b07d'
             '37fbcf495c90c41c98afcd0ce06aabbc727a65468e92960efd9d88c0e3f83330'
             'a50a8bfdb28c47c1742f400287a8a7ba65f9893dee74c109aad517d46afed2a1')
 
@@ -39,6 +41,8 @@ prepare() {
   patch -p1 -i ${srcdir}/004-msys2-usr.patch
   # https://cygwin.com/pipermail/cygwin-apps/2023-April/042816.html
   patch -p1 -i "${srcdir}/005-peflags-add-support-for-IMAGE_DLLCHARACTERISTICS_GUA.patch"
+  # aarch64-pc-cygwin: treat ARM64 like x86_64 (same address space layout)
+  patch -p1 -i "${srcdir}/006-add-aarch64-support.patch"
 
   if check_option "strip" "n"; then
     sed -i "s/ -s//g" Makefile.in
@@ -49,7 +53,17 @@ prepare() {
 build() {
   cd "${srcdir}/${pkgname}-${pkgver}"
 
+  # aarch64-pc-cygwin cross: --host stops configure probing with the build
+  # compiler.  The C++ runtime is linked statically, as for the native build.
+  # -Werror is dropped: the cross GCC 17 warns about code the native GCC
+  # accepts (e.g. an unused-but-set variable in imagehelper/sections.cc).
+  local _xargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+    sed -i 's/ -Werror//' Makefile.in imagehelper/Makefile.in
+  fi
   ./configure --build=${CHOST} --prefix=/usr \
+    "${_xargs[@]}" \
     --sysconfdir=/etc \
     --with-posix-shell=/usr/bin/dash \
     CXXFLAGS="${CXXFLAGS} -static -static-libgcc -static-libstdc++" \
