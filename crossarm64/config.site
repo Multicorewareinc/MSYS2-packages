@@ -55,6 +55,15 @@ with_libintl_prefix=/usr/aarch64-pc-cygwin/usr
 #    lock; keep that, rather than the cygwin* assumption.
 : ${gl_cv_func_wctob_works=yes}
 : ${gl_cv_func_setlocale_null_one_mtsafe=no}
+: ${gl_cv_func_setlocale_null_all_mtsafe=no}
+
+# The "working sigaltstack" check (c-stack, used by diffutils) cannot be
+# compiled: its test indexes a 32 MB static array with a constant 16 MB
+# offset, which crashes the cross GCC 17 (internal compiler error in
+# extract_insn, also for a two-line reproducer).  With the offset computed
+# at run time, the test catches the stack overflow on the alternate stack
+# on ARM64 (exit 0, at -O0 and -O2), as natively on x86-64.
+: ${sv_cv_sigaltstack=yes}
 #  - the OS name coreutils' uname -o prints comes from the host triplet:
 #    "Cygwin" for aarch64-pc-cygwin, where native MSYS2 (and official
 #    MinGit) print "Msys".
