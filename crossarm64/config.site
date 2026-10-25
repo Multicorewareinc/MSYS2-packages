@@ -30,3 +30,11 @@ fi
 # for this build is the sysroot.
 with_libiconv_prefix=/usr/aarch64-pc-cygwin/usr
 with_libintl_prefix=/usr/aarch64-pc-cygwin/usr
+
+# Checks whose test program signals itself from another process cannot be
+# run here: configure's x86-64 shell starts the ARM64 test program as one of
+# its own Cygwin children, so the ARM64 runtime takes over a PID that its own
+# process table does not know, and "kill PID" from a shell the test spawns
+# fails.  Give the result the test produces when run on ARM64 itself (from
+# an ARM64 shell and from cmd.exe; also the native x86-64 result).
+: ${gl_cv_func_pthread_sigmask_unblock_works=yes}
