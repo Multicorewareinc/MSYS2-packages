@@ -37,6 +37,11 @@ build() {
     # which nothing sets in a cross environment, so every install of a utility
     # fails and make install dies on the first chmod of a file it never copied.
     export LT_CYGPATH=/usr/bin/cygpath
+    # The native x86_64 build uses the x86_64/gcc-assembly (test-and-set)
+    # mutexes.  The AArch64 equivalent exists, but configure detects it by
+    # __arm64__, which GCC does not define for aarch64 (only __aarch64__), so
+    # it falls through to fcntl mutexes, which BDB no longer supports.
+    _host_args+=(--with-mutex=ARM64/gcc-assembly)
   fi
 
   CFLAGS="$CFLAGS -Wno-incompatible-pointer-types " \
