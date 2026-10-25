@@ -20,3 +20,12 @@
 if test "$cross_compiling" = yes; then
   cross_compiling=maybe
 fi
+
+# gettext's and libiconv's search macros (AM_ICONV, AM_GNU_GETTEXT) look in
+# $prefix, i.e. the build machine's /usr, find the x86-64 libiconv/libintl
+# there, fail to link them and drop iconv and NLS support (issue #52).  The
+# target's libraries are in the sysroot.  Set unconditionally: a native
+# recipe's --without-libiconv-prefix means "use the default prefix", which
+# for this build is the sysroot.
+with_libiconv_prefix=/usr/aarch64-pc-cygwin/usr
+with_libintl_prefix=/usr/aarch64-pc-cygwin/usr
