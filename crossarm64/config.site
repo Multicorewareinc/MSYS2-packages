@@ -55,3 +55,7 @@ with_libintl_prefix=/usr/aarch64-pc-cygwin/usr
 #    lock; keep that, rather than the cygwin* assumption.
 : ${gl_cv_func_wctob_works=yes}
 : ${gl_cv_func_setlocale_null_one_mtsafe=no}
+#  - the OS name coreutils' uname -o prints comes from the host triplet:
+#    "Cygwin" for aarch64-pc-cygwin, where native MSYS2 (and official
+#    MinGit) print "Msys".
+: ${gl_cv_host_operating_system=Msys}
