@@ -1,0 +1,22 @@
+# Autoconf site file for the aarch64-pc-cygwin cross build
+# (loaded through CONFIG_SITE, set in .ci/makepkg-aarch64-cross.conf).
+#
+# The build machine is itself Windows on ARM64, so the programs configure
+# compiles for the target can simply be run.  Without this, configure sees
+# --build != --host, decides it is cross compiling and guesses every
+# run-time check instead of testing it (279 guesses in coreutils alone).
+# Some guesses swap in gnulib replacements that the native build never uses;
+# one of them (fflush/fseeko on input streams) recursed on Cygwin, opening
+# /dev/null until the descriptor table was full.
+#
+# With cross_compiling=maybe, configure's compiler check runs one test
+# program; when it works, configure switches to native mode and runs every
+# check on the ARM64 runtime itself, so the answers are the real ones for
+# this target.  The ARM64 msys-2.0.dll and the target libraries are found
+# through a directory of ARM64 DLLs at the end of PATH (see
+# crossarm64/20-build-userland.sh): the Windows loader skips a DLL built for
+# another machine and keeps searching, so the x86-64 build tools still load
+# their own DLLs from /usr/bin.
+if test "$cross_compiling" = yes; then
+  cross_compiling=maybe
+fi

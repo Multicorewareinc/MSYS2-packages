@@ -24,12 +24,31 @@ MINGIT_EXTRA=(dash util-linux rebase)
 ORDER=("${BASH_CHAIN[@]}" "${SSH_CHAIN[@]}" "${MINGIT_EXTRA[@]}")
 [[ $# -gt 0 ]] && ORDER=("$@")
 
+# configure runs its test programs natively (crossarm64/config.site); they
+# find the ARM64 runtime and the libraries staged so far here, at the end of
+# PATH (set in the makepkg config).  DLLs only, so no ARM64 program can
+# shadow a build tool.
+DLLDIR=$SYSROOT/dlls
+refresh_dlls() {
+  rm -rf "$DLLDIR"; mkdir -p "$DLLDIR"
+  cp -f "$SYSROOT"/bin/msys-2.0.dll "$DLLDIR"/ || exit 1
+  cp -f "$SYSROOT"/usr/bin/*.dll "$DLLDIR"/ 2>/dev/null
+}
+
 for d in "${ORDER[@]}"; do
   echo "=== $(date +%T) building $d"
   cd "$REPO/$d" || exit 1
+  refresh_dlls
   if ! makepkg --config "$CONF" -f -C -d --noconfirm --skippgpcheck --nocheck \
        >"$LOGS/$d.log" 2>&1; then
     echo "FAILED: $d (log: $LOGS/$d.log)"; tail -30 "$LOGS/$d.log"; exit 1
+  fi
+  # every autoconf configure should have run natively, with nothing guessed
+  logs=$(find "$REPO/$d/src" -name config.log 2>/dev/null)
+  if [[ -n $logs ]]; then
+    cross=$(grep -l "^cross_compiling='\?yes'\?$" $logs | wc -l)
+    guess=$(cat $logs | grep -c "guessing")
+    echo "  configure: $(echo "$logs" | wc -l) config.log, still cross: $cross, guessed checks: $guess"
   fi
   for p in $(makepkg --config "$CONF" --packagelist 2>/dev/null); do
     [[ -f $p ]] || { echo "  missing $p"; continue; }
