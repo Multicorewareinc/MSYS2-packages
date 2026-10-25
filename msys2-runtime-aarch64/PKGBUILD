@@ -9,7 +9,7 @@ pkgbase=${_realname}
 # and prevents any accidental host-clobbering build.
 pkgname=cross-msysarm64-runtime-stage1
 pkgver=3.6.7
-pkgrel=12
+pkgrel=13
 pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-cygwin"
 arch=('x86_64')
 options=('!strip' '!buildflags')
@@ -143,8 +143,14 @@ source=(
   woarm64-0114-Cygwin-gendef-fix-AArch64-stabilize-sig-stack-lock.patch
   woarm64-0115-Cygwin-gendef-restore-incyg-in-AArch64-longjmp-ins.patch
   woarm64-0116-Cygwin-cygwin.din-export-GetCommandLine-without-decor.patch
+  woarm64-0117-Cygwin-open-Add-missing-unlock-on-error.patch
+  woarm64-0118-Cygwin-open-Do-not-set-tentative-fhandler-to-fdtab.patch
+  woarm64-0119-Cygwin-signal-preserve-runtime-nesting-across-user-h.patch
 )
 sha256sums=('SKIP'
+            'SKIP'
+            'SKIP'
+            'SKIP'
             'SKIP'
             'SKIP'
             'SKIP'
