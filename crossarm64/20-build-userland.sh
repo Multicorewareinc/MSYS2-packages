@@ -29,6 +29,19 @@ ORDER=("${BASH_CHAIN[@]}" "${SSH_CHAIN[@]}" "${MINGIT_EXTRA[@]}")
 # PATH (set in the makepkg config).  DLLs only, so no ARM64 program can
 # shadow a build tool.
 DLLDIR=$SYSROOT/dlls
+
+# The sysroot's bare include directory is searched before usr/include, so a
+# stray newlib header there silently changes every package: refuse to build
+# unless it holds runtime-devel's configured newlib.h and none of the
+# headers that belong to libiconv or ncurses (#26).
+for h in include sys-include usr/include usr/sys-include; do
+  if ! grep -q _HAVE_LONG_DOUBLE "$SYSROOT/$h/newlib.h" 2>/dev/null; then
+    echo "ERROR: $SYSROOT/$h/newlib.h is not the configured one (reinstall cross-msysarm64-runtime-devel)"; exit 1
+  fi
+done
+for f in include/iconv.h include/unctrl.h sys-include/iconv.h sys-include/unctrl.h; do
+  [[ -e $SYSROOT/$f ]] && { echo "ERROR: $SYSROOT/$f shadows the libiconv/ncurses header; remove it"; exit 1; }
+done
 refresh_dlls() {
   rm -rf "$DLLDIR"; mkdir -p "$DLLDIR"
   cp -f "$SYSROOT"/bin/msys-2.0.dll "$DLLDIR"/ || exit 1
