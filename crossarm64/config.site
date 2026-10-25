@@ -38,3 +38,15 @@ with_libintl_prefix=/usr/aarch64-pc-cygwin/usr
 # fails.  Give the result the test produces when run on ARM64 itself (from
 # an ARM64 shell and from cmd.exe; also the native x86-64 result).
 : ${gl_cv_func_pthread_sigmask_unblock_works=yes}
+
+# gnulib takes host-specific paths for cygwin* hosts that a native MSYS2
+# build (host *-msys) never takes, and some are x86-only.  Give the native
+# MSYS2 results, checked on ARM64:
+#  - wctob: the cygwin* test uses register "%ebx" (an i386 Cygwin bug check)
+#    and does not compile on AArch64, so wctob was replaced.  wctob(0xFC) is
+#    -1 in en_US.UTF-8 and 252 after mbtowc in fr_FR.ISO-8859-1 on ARM64,
+#    exactly as natively on x86-64.
+#  - setlocale (..., NULL): native MSYS2 treats it as not MT-safe and adds a
+#    lock; keep that, rather than the cygwin* assumption.
+: ${gl_cv_func_wctob_works=yes}
+: ${gl_cv_func_setlocale_null_one_mtsafe=no}
