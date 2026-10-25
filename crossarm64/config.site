@@ -30,6 +30,11 @@ fi
 # for this build is the sysroot.
 with_libiconv_prefix=/usr/aarch64-pc-cygwin/usr
 with_libintl_prefix=/usr/aarch64-pc-cygwin/usr
+# A library found outside /usr/lib makes those macros add "-R<dir>" (an
+# rpath), which some packages hand straight to gcc; rpath has no meaning for
+# Windows DLLs, and natively the macros never add one (the libraries are in
+# /usr/lib).  Same as --disable-rpath.
+: ${enable_rpath=no}
 
 # Checks whose test program signals itself from another process cannot be
 # run here: configure's x86-64 shell starts the ARM64 test program as one of
