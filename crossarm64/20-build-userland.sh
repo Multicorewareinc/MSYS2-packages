@@ -24,11 +24,6 @@ MINGIT_EXTRA=(dash util-linux rebase)
 ORDER=("${BASH_CHAIN[@]}" "${SSH_CHAIN[@]}" "${MINGIT_EXTRA[@]}")
 [[ $# -gt 0 ]] && ORDER=("$@")
 
-# configure runs its test programs natively (crossarm64/config.site); they
-# find the ARM64 runtime and the libraries staged so far here, at the end of
-# PATH (set in the makepkg config).  DLLs only, so no ARM64 program can
-# shadow a build tool.
-DLLDIR=$SYSROOT/dlls
 
 # The sysroot's bare include directory is searched before usr/include, so a
 # stray newlib header there silently changes every package: refuse to build
@@ -42,16 +37,27 @@ done
 for f in include/iconv.h include/unctrl.h sys-include/iconv.h sys-include/unctrl.h; do
   [[ -e $SYSROOT/$f ]] && { echo "ERROR: $SYSROOT/$f shadows the libiconv/ncurses header; remove it"; exit 1; }
 done
-refresh_dlls() {
-  rm -rf "$DLLDIR"; mkdir -p "$DLLDIR"
-  cp -f "$SYSROOT"/bin/msys-2.0.dll "$DLLDIR"/ || exit 1
-  cp -f "$SYSROOT"/usr/bin/*.dll "$DLLDIR"/ 2>/dev/null
+# configure runs its test programs natively (crossarm64/config.site).  They
+# run on the ARM64 runtime with the sysroot as their root: msys-2.0.dll in
+# $SYSROOT/usr/bin (found at the end of PATH, set in the makepkg config) makes
+# $SYSROOT "/", and an fstab, /tmp and sh give the test programs the usual
+# environment (gnulib's pthread_sigmask check, for one, runs "sh -c 'kill
+# ...'" through system()).  The Windows loader skips DLLs built for another
+# machine, so the x86-64 build tools still load their own from /usr/bin.
+prepare_cfgroot() {
+  cp -f "$SYSROOT"/bin/msys-2.0.dll "$SYSROOT"/usr/bin/ || exit 1
+  mkdir -p "$SYSROOT"/tmp "$SYSROOT"/etc
+  [[ -f $SYSROOT/etc/fstab ]] ||
+    printf 'none / cygdrive binary,posix=0,noacl,user 0 0\n' > "$SYSROOT"/etc/fstab
+  if [[ -f $SYSROOT/usr/bin/bash.exe ]]; then
+    cp -f "$SYSROOT"/usr/bin/bash.exe "$SYSROOT"/usr/bin/sh.exe
+  fi
 }
 
 for d in "${ORDER[@]}"; do
   echo "=== $(date +%T) building $d"
   cd "$REPO/$d" || exit 1
-  refresh_dlls
+  prepare_cfgroot
   if ! makepkg --config "$CONF" -f -C -d --noconfirm --skippgpcheck --nocheck \
        >"$LOGS/$d.log" 2>&1; then
     echo "FAILED: $d (log: $LOGS/$d.log)"; tail -30 "$LOGS/$d.log"; exit 1

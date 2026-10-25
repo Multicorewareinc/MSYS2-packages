@@ -13,10 +13,11 @@
 # program; when it works, configure switches to native mode and runs every
 # check on the ARM64 runtime itself, so the answers are the real ones for
 # this target.  The ARM64 msys-2.0.dll and the target libraries are found
-# through a directory of ARM64 DLLs at the end of PATH (see
-# crossarm64/20-build-userland.sh): the Windows loader skips a DLL built for
-# another machine and keeps searching, so the x86-64 build tools still load
-# their own DLLs from /usr/bin.
+# in the sysroot's usr/bin at the end of PATH, which makes the sysroot the
+# test programs' root (with an fstab, /tmp and sh prepared by
+# crossarm64/20-build-userland.sh).  The Windows loader skips a DLL built
+# for another machine and keeps searching, so the x86-64 build tools still
+# load their own DLLs from /usr/bin.
 if test "$cross_compiling" = yes; then
   cross_compiling=maybe
 fi
