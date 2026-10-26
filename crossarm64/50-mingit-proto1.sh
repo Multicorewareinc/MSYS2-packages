@@ -97,6 +97,25 @@ while :; do
 done
 say "added deps    : $added"
 
+# 1c. binaries outside usr/bin: the ssh helpers in usr/lib/ssh, and the
+#     runtime's getprocaddr helpers in usr/libexec.  The runtime picks the
+#     getprocaddr helper by the TARGET process's architecture, so the zip's
+#     getprocaddr32/64 stay (x86/x64 targets) and getprocaddrarm64 is added.
+others=0
+while IFS= read -r f; do
+  r="${f#"$OUT"/}"
+  [ -f "$ROOT/$r" ] || continue
+  case "$(file -b "$ROOT/$r")" in *ARM64*|*Aarch64*) ;; *) continue ;; esac
+  cp -f "$ROOT/$r" "$f" && others=$((others + 1))
+done < <(find "$OUT/usr" -path "$BIN" -prune -o -type f \( -iname '*.exe' -o -iname '*.dll' \) -print)
+if [ -f "$ROOT/usr/libexec/getprocaddrarm64.exe" ]; then
+  mkdir -p "$OUT/usr/libexec"
+  cp -f "$ROOT/usr/libexec/getprocaddrarm64.exe" "$OUT/usr/libexec/" && others=$((others + 1))
+else
+  warn "no getprocaddrarm64.exe in $ROOT/usr/libexec: Ctrl+C to git.exe will hard-kill it"
+fi
+say "outside bin   : $others"
+
 # 2. drop whatever of the ssh/kerberos cluster we have no ARM64 build of.
 #    Once the openssh chain is cross-built, step 1 has already swapped those
 #    in, and they stay.
@@ -146,6 +165,12 @@ done
 say "usr/bin       : $before -> $(ls "$BIN" | wc -l) files"
 say "  ARM64       : $a"
 say "  x86-64      : $x"
+rest=$(find "$OUT/usr" -path "$BIN" -prune -o -type f \( -iname '*.exe' -o -iname '*.dll' \) -print |
+       grep -v '/usr/libexec/getprocaddr\(32\|64\)\.exe$' |
+       while IFS= read -r f; do
+         case "$(file -b "$f")" in *ARM64*|*Aarch64*) ;; *) echo "${f#"$OUT"/}" ;; esac
+       done)
+say "rest of usr/  : ${rest:-all ARM64 (getprocaddr32/64 are per-target, kept)}"
 say "clangarm64/   : untouched (already native)"
 echo
 say "try it:"

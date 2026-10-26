@@ -28,6 +28,13 @@ for f in "$SYSROOT"/bin/*; do
   esac
 done
 [[ -d $SYSROOT/etc ]] && cp -a "$SYSROOT/etc/." "$ROOT/etc/"
+# runtime helpers the DLL spawns by absolute path: getprocaddrarm64.exe looks
+# up kernel32!CtrlRoutine so Ctrl+C reaches native ARM64 programs (git.exe)
+# instead of falling back to TerminateProcess
+if [[ -d $SYSROOT/libexec ]]; then
+  mkdir -p "$ROOT/usr/libexec"
+  cp -a "$SYSROOT/libexec/." "$ROOT/usr/libexec/"
+fi
 # zoneinfo is architecture-independent; bash's printf %(...)T tests need it
 [[ -d $ROOT/usr/share/zoneinfo ]] || cp -a /usr/share/zoneinfo "$ROOT/usr/share/"
 # sh: MSYS2 ships /usr/bin/sh.exe as a copy of bash
