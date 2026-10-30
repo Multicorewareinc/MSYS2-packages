@@ -54,7 +54,10 @@ execute(){
 # Get changed packages in correct build order
 list_packages() {
     # readarray doesn't work with a plain pipe
-    readarray -t packages < <("$DIR/ci-get-build-order.py")
+    # The order comes from the native dependencies. With MSYS2_ARM64_CROSS set
+    # some recipes build fewer packages (gettext only libintl), so dependencies
+    # such as bash's on gettext-devel would no longer be found.
+    readarray -t packages < <(env -u MSYS2_ARM64_CROSS "$DIR/ci-get-build-order.py")
 }
 
 pkgver_from_metadata() {
@@ -74,6 +77,29 @@ list_packages || failure 'Could not detect changed files'
 message 'Processing changes'
 
 [ "${#packages[@]}" -eq 0 ] && success 'No changes in package recipes'
+
+# Cross-building for aarch64-pc-cygwin (MSYS2_ARM64_CROSS=1). The cross
+# toolchain is not in the repository yet, so the changed toolchain packages are
+# built and installed first; then every changed package that lists aarch64 in
+# arch=() is cross-built and installed into the toolchain sysroot, where the
+# packages after it find its headers and libraries.
+declare -a cross_packages=()
+if [[ -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    declare -a toolchain_packages=()
+    for package in "${packages[@]}"; do
+        case "${package}" in
+            cross-msysarm64-*|msys2-runtime-aarch64*)
+                toolchain_packages+=("${package}") ;;
+            *)
+                readarray -t arch < <(set +eo pipefail; arch=(); . "${package}/PKGBUILD"; printf '%s\n' "${arch[@]}")
+                [[ " ${arch[*]} " == *" aarch64 "* ]] && cross_packages+=("${package}") ;;
+        esac
+    done
+    packages=("${toolchain_packages[@]}")
+    message 'Toolchain packages' "${packages[@]}"
+    message 'Packages to cross-build for aarch64' "${cross_packages[@]}"
+    unset package toolchain_packages arch
+fi
 
 # Build
 message 'Building packages' "${packages[@]}"
@@ -155,6 +181,40 @@ for package in "${packages[@]}"; do
     rm -rf B
     unset package
 done
+
+if [[ ${#cross_packages[@]} -gt 0 ]]; then
+    message 'Installing the aarch64 cross toolchain'
+    pacman -S --needed --noconfirm --noprogressbar \
+        cross-msysarm64-binutils cross-msysarm64-gcc cross-msysarm64-runtime \
+        cross-msysarm64-runtime-devel cross-msysarm64-w32api-headers \
+        cross-msysarm64-w32api-runtime cross-msysarm64-windows-default-manifest
+
+    # The sysroot gets its own pacman database. --noscriptlet: install scripts
+    # would run aarch64 programs. --nodeps: aarch64 dependencies can't be
+    # resolved from a repository yet; the build order takes care of them.
+    sysroot=/usr/aarch64-pc-cygwin
+    mkdir -p "${sysroot}/var/lib/pacman" "${sysroot}/var/cache/pacman/pkg"
+    sysroot_pacman=(pacman --root "${sysroot}" --dbpath "${sysroot}/var/lib/pacman"
+                    --cachedir "${sysroot}/var/cache/pacman/pkg" --arch aarch64
+                    --noconfirm --noprogressbar)
+
+    for package in "${cross_packages[@]}"; do
+        echo "::group::[cross-build] ${package}"
+        execute 'Clear cache' pacman -Scc --noconfirm
+        execute 'Fetch keys' "$DIR/fetch-validpgpkeys.sh"
+        execute 'Building aarch64 binary' makepkg --config "$DIR/makepkg-aarch64-cross.conf" --noconfirm --noprogressbar --nocheck --syncdeps --rmdeps --cleanbuild
+        cp $PWD/$package/*.pkg.tar.* $PWD/artifacts
+        echo "::endgroup::"
+
+        echo "::group::[sysroot-install] ${package}"
+        "${sysroot_pacman[@]}" -U --noscriptlet --nodeps --nodeps $PWD/$package/*.pkg.tar.* \
+            || failure "Installing into ${sysroot} failed"
+        echo "::endgroup::"
+
+        rm -f "${package}"/*.pkg.tar.*
+        unset package
+    done
+fi
 success 'All packages built successfully'
 
 cd artifacts

@@ -15,9 +15,10 @@ jobs:
       fail-fast: false
       matrix:
         include: [
-          { msystem: MSYS, runner: windows-2022 },
+          { msystem: MSYS, runner: windows-2022, name: MSYS, artifact: MSYS-packages },
+          { msystem: MSYS, runner: windows-2022, name: MSYS cross-aarch64, artifact: MSYS-cross-aarch64-packages, cross: aarch64 },
         ]
-    name: ${{ matrix.msystem }}
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Gather Facts
@@ -76,13 +77,14 @@ jobs:
         id: build
         run: |
           cd "$(cygpath '${{ steps.facts.outputs.drive }}/_')"
+          if [[ "${{ matrix.cross }}" == aarch64 ]]; then export MSYS2_ARM64_CROSS=1; fi
           ./.ci/ci-build.sh
 
       - name: "Upload binaries"
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ matrix.msystem }}-packages
+          name: ${{ matrix.artifact }}
           path: ${{ steps.facts.outputs.drive }}/_/artifacts/*.pkg.tar.*
           if-no-files-found: ignore
 
