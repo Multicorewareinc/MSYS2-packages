@@ -14,7 +14,7 @@ msys2_references=(
 )
 license=('spdx:MIT')
 makedepends=('autotools' 'gcc')
-source=(https://invisible-island.net/archives/ncurses/${pkgbase}-${pkgver}.tar.gz{,.asc}
+source=(https://ftp.gnu.org/gnu/ncurses/${pkgbase}-${pkgver}.tar.gz ${pkgbase}-${pkgver}.tar.gz.asc::https://ftp.gnu.org/gnu/ncurses/${pkgbase}-${pkgver}.tar.gz.sig
         "ncurses-6.3-pkgconfig.patch"
         "ncurses-6.3-cflags-private.patch")
 sha256sums=('355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11'
