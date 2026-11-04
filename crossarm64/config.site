@@ -1,0 +1,70 @@
+# Autoconf site file for the aarch64-pc-cygwin cross build
+# (loaded through CONFIG_SITE, set in .ci/makepkg-aarch64-cross.conf).
+#
+# The build machine is itself Windows on ARM64, so the programs configure
+# compiles for the target can simply be run.  Without this, configure sees
+# --build != --host, decides it is cross compiling and guesses every
+# run-time check instead of testing it (279 guesses in coreutils alone).
+# Some guesses swap in gnulib replacements that the native build never uses;
+# one of them (fflush/fseeko on input streams) recursed on Cygwin, opening
+# /dev/null until the descriptor table was full.
+#
+# With cross_compiling=maybe, configure's compiler check runs one test
+# program; when it works, configure switches to native mode and runs every
+# check on the ARM64 runtime itself, so the answers are the real ones for
+# this target.  The ARM64 msys-2.0.dll and the target libraries are found
+# in the sysroot's usr/bin at the end of PATH, which makes the sysroot the
+# test programs' root (with an fstab, /tmp and sh prepared by
+# crossarm64/20-build-userland.sh).  The Windows loader skips a DLL built
+# for another machine and keeps searching, so the x86-64 build tools still
+# load their own DLLs from /usr/bin.
+if test "$cross_compiling" = yes; then
+  cross_compiling=maybe
+fi
+
+# gettext's and libiconv's search macros (AM_ICONV, AM_GNU_GETTEXT) look in
+# $prefix, i.e. the build machine's /usr, find the x86-64 libiconv/libintl
+# there, fail to link them and drop iconv and NLS support (issue #52).  The
+# target's libraries are in the sysroot.  Set unconditionally: a native
+# recipe's --without-libiconv-prefix means "use the default prefix", which
+# for this build is the sysroot.
+with_libiconv_prefix=/usr/aarch64-pc-cygwin/usr
+with_libintl_prefix=/usr/aarch64-pc-cygwin/usr
+# A library found outside /usr/lib makes those macros add "-R<dir>" (an
+# rpath), which some packages hand straight to gcc; rpath has no meaning for
+# Windows DLLs, and natively the macros never add one (the libraries are in
+# /usr/lib).  Same as --disable-rpath.
+: ${enable_rpath=no}
+
+# Checks whose test program signals itself from another process cannot be
+# run here: configure's x86-64 shell starts the ARM64 test program as one of
+# its own Cygwin children, so the ARM64 runtime takes over a PID that its own
+# process table does not know, and "kill PID" from a shell the test spawns
+# fails.  Give the result the test produces when run on ARM64 itself (from
+# an ARM64 shell and from cmd.exe; also the native x86-64 result).
+: ${gl_cv_func_pthread_sigmask_unblock_works=yes}
+
+# gnulib takes host-specific paths for cygwin* hosts that a native MSYS2
+# build (host *-msys) never takes, and some are x86-only.  Give the native
+# MSYS2 results, checked on ARM64:
+#  - wctob: the cygwin* test uses register "%ebx" (an i386 Cygwin bug check)
+#    and does not compile on AArch64, so wctob was replaced.  wctob(0xFC) is
+#    -1 in en_US.UTF-8 and 252 after mbtowc in fr_FR.ISO-8859-1 on ARM64,
+#    exactly as natively on x86-64.
+#  - setlocale (..., NULL): native MSYS2 treats it as not MT-safe and adds a
+#    lock; keep that, rather than the cygwin* assumption.
+: ${gl_cv_func_wctob_works=yes}
+: ${gl_cv_func_setlocale_null_one_mtsafe=no}
+: ${gl_cv_func_setlocale_null_all_mtsafe=no}
+
+# The "working sigaltstack" check (c-stack, used by diffutils) cannot be
+# compiled: its test indexes a 32 MB static array with a constant 16 MB
+# offset, which crashes the cross GCC 17 (internal compiler error in
+# extract_insn, also for a two-line reproducer).  With the offset computed
+# at run time, the test catches the stack overflow on the alternate stack
+# on ARM64 (exit 0, at -O0 and -O2), as natively on x86-64.
+: ${sv_cv_sigaltstack=yes}
+#  - the OS name coreutils' uname -o prints comes from the host triplet:
+#    "Cygwin" for aarch64-pc-cygwin, where native MSYS2 (and official
+#    MinGit) print "Msys".
+: ${gl_cv_host_operating_system=Msys}
