@@ -45,6 +45,7 @@ done
 # ...'" through system()).  The Windows loader skips DLLs built for another
 # machine, so the x86-64 build tools still load their own from /usr/bin.
 prepare_cfgroot() {
+  mkdir -p "$SYSROOT"/usr/bin
   cp -f "$SYSROOT"/bin/msys-2.0.dll "$SYSROOT"/usr/bin/ || exit 1
   # GCC's runtime DLLs (C++ test programs, e.g. gmp's, need cygstdc++-6.dll)
   local gccdir; gccdir=$(dirname "$(aarch64-pc-cygwin-gcc -print-libgcc-file-name)")

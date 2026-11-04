@@ -1,0 +1,7 @@
+# winsup testsuite failures known on aarch64 (one per line, as the .trs
+# files name them; # starts a comment).  XPASS counts as a failure, so the
+# XFAIL markings that no longer hold are listed too until they are trimmed.
+winsup.api/ltp/link04.trs       # FAIL, also in the crossarm64/README.md baseline
+winsup.api/ltp/access01.trs     # XPASS: 0086 skips the subtests that fail
+winsup.api/ltp/access05.trs     # XPASS: same
+winsup.api/ltp/symlink05.trs    # XPASS
