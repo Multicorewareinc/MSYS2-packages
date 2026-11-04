@@ -6,6 +6,8 @@ concurrency:
 
 on:
   push:
+    # built and tested by arm64-selfhosted.yml instead
+    branches-ignore: [aarch64-arm64-selfhosted-ci]
   pull_request:
 
 jobs:

@@ -9,7 +9,7 @@
 # configures.  -d: their depends name host packages (ncurses-devel, ...).
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONF=$REPO/.ci/makepkg-aarch64-cross.conf
+CONF=${CONF:-$REPO/.ci/makepkg-aarch64-cross.conf}
 SYSROOT=/usr/aarch64-pc-cygwin
 OUTDIR="${PKGDEST:-$(dirname "$REPO")/aarch64-pkgs}"
 export PKGDEST=$OUTDIR/userland

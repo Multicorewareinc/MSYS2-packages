@@ -1,0 +1,184 @@
+name: arm64-selfhosted
+
+# The whole aarch64-pc-cygwin chain on a self-hosted Windows-ARM64 machine:
+# toolchain and runtime, winsup testsuite, bash chain and bash tests, ssh
+# chain and OpenSSH tests, MinGit and git's test suite.  Builds run in the
+# runner's own x86_64 MSYS2 (emulated), tests run natively in the ARM64 root.
+# Set up with crossarm64/ci/setup-runner.ps1.
+#
+# Never runs for pull requests: the runner is a real machine and this
+# repository is public.
+
+on:
+  push:
+    branches: [aarch64-arm64-selfhosted-ci]
+  workflow_dispatch:
+    inputs:
+      rebuild_toolchain:
+        description: Rebuild the toolchain even if its recipes did not change
+        type: boolean
+        default: false
+      git_tests:
+        description: git test scripts to run, comma-separated (empty = all)
+        type: string
+        default: ''
+
+concurrency:
+  group: arm64-selfhosted
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  MSYSTEM: MSYS
+  CHERE_INVOKING: '1'
+  CI_STATE: /c/ci-state
+  STATE_WIN: C:\ci-state
+
+defaults:
+  run:
+    shell: C:\ci-msys64\usr\bin\bash.exe --login -eo pipefail {0}
+
+jobs:
+  toolchain:
+    name: 1 toolchain + runtime
+    runs-on: [self-hosted, msys2-arm64]
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host packages
+        run: bash crossarm64/00-host-prereqs.sh
+      - name: Toolchain and runtime
+        env:
+          FORCE_TOOLCHAIN: ${{ inputs.rebuild_toolchain || 'false' }}
+        run: bash crossarm64/ci/toolchain.sh
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: toolchain-logs
+          path: ${{ env.STATE_WIN }}\toolchain-pkgs\logs
+          if-no-files-found: ignore
+
+  winsup:
+    name: 2 winsup testsuite
+    needs: toolchain
+    runs-on: [self-hosted, msys2-arm64]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: false }
+      - name: winsup testsuite
+        run: bash crossarm64/ci/winsup.sh
+      - name: Check
+        run: bash crossarm64/ci/check-results.sh winsup "$CI_STATE/run/results/winsup/summary.txt"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: winsup-results, path: '${{ env.STATE_WIN }}\run\results\winsup' }
+
+  bash:
+    name: 3 bash chain
+    needs: [toolchain, winsup]
+    if: ${{ !cancelled() && needs.toolchain.result == 'success' }}
+    runs-on: [self-hosted, msys2-arm64]
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: false }
+      - name: Build
+        run: bash crossarm64/ci/build-userland.sh bash
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: bash-chain, path: "${{ env.STATE_WIN }}\\run\\userland\n${{ env.STATE_WIN }}\\run\\logs" }
+
+  bash-tests:
+    name: 4 bash tests
+    needs: bash
+    runs-on: [self-hosted, msys2-arm64]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: false }
+      - name: bash testsuite
+        shell: powershell
+        run: |
+          & .\crossarm64\ci\run-in-root.ps1 -Root "$env:STATE_WIN\run\root" `
+              -Command 'rm -rf /ci/results/bash; THIS_SH=/usr/bin/bash sh /ci/run-bash-tests.sh /usr/share/bash/tests /ci/results/bash 300'
+      - name: Check
+        run: |
+          rm -rf "$CI_STATE/run/results/bash"; cp -a "$CI_STATE/run/root/ci/results/bash" "$CI_STATE/run/results/bash"
+          bash crossarm64/ci/check-results.sh bash "$CI_STATE/run/results/bash/summary.txt"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: bash-results, path: '${{ env.STATE_WIN }}\run\results\bash' }
+
+  ssh:
+    name: 5 ssh chain
+    needs: [bash, bash-tests]
+    if: ${{ !cancelled() && needs.bash.result == 'success' }}
+    runs-on: [self-hosted, msys2-arm64]
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: false }
+      - name: Build
+        run: bash crossarm64/ci/build-userland.sh ssh
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: ssh-chain, path: "${{ env.STATE_WIN }}\\run\\userland\n${{ env.STATE_WIN }}\\run\\logs" }
+
+  ssh-tests:
+    name: 6 OpenSSH tests
+    needs: ssh
+    runs-on: [self-hosted, msys2-arm64]
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: false }
+      - name: OpenSSH unit + t-exec
+        shell: powershell
+        run: |
+          & .\crossarm64\ci\run-in-root.ps1 -Root "$env:STATE_WIN\run\root" `
+              -Command 'rm -rf /ci/results/ssh; bash /ci/run-ssh-tests.sh /build/openssh /ci/results/ssh all 600'
+      - name: Check
+        run: |
+          rm -rf "$CI_STATE/run/results/ssh"; cp -a "$CI_STATE/run/root/ci/results/ssh" "$CI_STATE/run/results/ssh"
+          bash crossarm64/ci/check-results.sh ssh "$CI_STATE"/run/results/ssh/{unit,t-exec}-summary.txt
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: ssh-results, path: '${{ env.STATE_WIN }}\run\results\ssh' }
+
+  mingit:
+    name: 7 MinGit
+    needs: [ssh, ssh-tests]
+    if: ${{ !cancelled() && needs.ssh.result == 'success' }}
+    runs-on: [self-hosted, msys2-arm64]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: false }
+      - name: Build the rest of usr/bin and assemble MinGit
+        run: bash crossarm64/ci/build-userland.sh mingit
+      - uses: actions/upload-artifact@v4
+        with: { name: mingit-arm64, path: '${{ env.STATE_WIN }}\run\mingit' }
+
+  git-tests:
+    name: 8 git test suite
+    needs: mingit
+    runs-on: [self-hosted, msys2-arm64]
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: false }
+      - name: git test suite against the MinGit package
+        shell: powershell
+        run: |
+          $out = "$env:STATE_WIN\run\results\git"
+          if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+          & .\crossarm64\test\run-git-tests-mingit.ps1 -MinGit "$env:STATE_WIN\run\mingit" `
+              -GitBuild "$env:STATE_WIN\gitbuild" -Out $out -Jobs 10 -Tests '${{ inputs.git_tests }}'
+      - name: Check
+        run: bash crossarm64/ci/check-results.sh git "$CI_STATE/run/results/git/summary.txt"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with: { name: git-results, path: "${{ env.STATE_WIN }}\\run\\results\\git\\summary.txt\n${{ env.STATE_WIN }}\\run\\results\\git\\logs" }
