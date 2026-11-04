@@ -2,9 +2,9 @@
 
 pkgname=findutils
 pkgver=4.11.0
-pkgrel=2
+pkgrel=3
 pkgdesc="GNU utilities to locate files"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:GPL-3.0-or-later')
 depends=('libiconv' 'libintl')
 makedepends=('libiconv-devel' 'gettext-devel' 'autotools' 'gcc')
@@ -32,6 +32,38 @@ build() {
   # which is a secure version of locate.
   # sed -i '/^SUBDIRS/s/locate//' Makefile.in
 
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # Cross-build for aarch64-pc-cygwin (see .ci/makepkg-aarch64-cross.conf).
+    # libiconv and libintl are staged under the toolchain sysroot at
+    # /usr/aarch64-pc-cygwin/usr by the packages built before this one.
+    #
+    # gnulib probes several behaviours with AC_RUN_IFELSE, which cannot run a
+    # target binary on the x64 build host.  Seed the ones whose cross default
+    # is wrong for this target, the same way coreutils does.
+    #
+    # -no-integrated-cpp: gl/lib/mountlist.c hangs cc1 forever otherwise -- no
+    # diagnostic, no progress, at -O0 and -O2 alike, so it is the front end and
+    # not the optimizer.  A separate cpp pass compiles it in seconds.  This is
+    # the same GCC-17 AArch64 lex-while-parse bug msys2-runtime-aarch64 already
+    # works around for libc/minires-os-if.o, reached here by a different file.
+    # Applied package-wide rather than per-object because findutils has no
+    # per-file rule hook; the cost is one extra process per translation unit.
+    ./configure \
+      --build=${CHOST} \
+      --host=aarch64-pc-cygwin \
+      --prefix=/usr \
+      --without-libiconv-prefix \
+      --without-libintl-prefix \
+      --disable-year2038 \
+      DEFAULT_ARG_SIZE="(32u*1024)" \
+      gl_cv_func_strtod_works=yes \
+      gl_cv_func_working_mktime=yes \
+      CFLAGS="-std=gnu17 -no-integrated-cpp -I/usr/aarch64-pc-cygwin/usr/include" \
+      LDFLAGS="${LDFLAGS} -L/usr/aarch64-pc-cygwin/usr/lib"
+    make
+    return
+  fi
+
   local -a extra_config
   # 32-bit cygwin only has 32-bit time_t
   # https://github.com/msys2/MSYS2-packages/issues/4078
@@ -51,6 +83,8 @@ build() {
 }
 
 check() {
+  # target binaries cannot run on the x64 cross host
+  [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]] && return 0
   cd "${srcdir}/${pkgname}-${pkgver}"
   make check
 }

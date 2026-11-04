@@ -4,9 +4,9 @@ pkgname=('mpfr' 'mpfr-devel')
 _pkgver=4.2.2
 pkgver=${_pkgver}
 # pkgver=${_pkgver}.p1
-pkgrel=1
+pkgrel=2
 pkgdesc="Multiple-precision floating-point library"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.mpfr.org/"
 msys2_repository_url='https://gitlab.inria.fr/mpfr/mpfr'
 msys2_references=(
@@ -33,7 +33,22 @@ prepare() {
 build() {
   cd "${srcdir}/${pkgname}-${_pkgver}"
 
-  ./configure --build=${CHOST} \
+  # aarch64-pc-cygwin cross: --host stops configure probing with the build
+  # compiler, and dependencies come from the toolchain sysroot.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+    _xargs+=(--with-gmp=/usr/aarch64-pc-cygwin/usr)
+    # configure accepts _Decimal128 because the compiler parses it, but the
+    # cross libgcc has no BID helpers for aarch64, so libmpfr fails to link
+    # with undefined __bid_divtd3.  mpfr only needs decimal float for its
+    # optional mpfr_get_decimal128 API.
+    _xargs+=(--disable-decimal-float)
+  fi
+  ./configure \
+    "${_xargs[@]}" \
     --prefix=/usr \
     --enable-shared \
     --disable-static
