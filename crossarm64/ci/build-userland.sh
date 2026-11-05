@@ -38,6 +38,7 @@ mingit)
 esac
 
 group "Assemble the ARM64 root"
+powershell -NoProfile -File "$(cygpath -w "$REPO/crossarm64/ci/stop-root-processes.ps1")" -Root "$(cygpath -w "$ROOT")"
 bash "$REPO/crossarm64/30-mkroot.sh" "$ROOT"
 mkdir -p "$ROOT/ci"
 cp -f "$REPO"/crossarm64/test/run-*-tests.sh "$REPO/crossarm64/test/ssh-test-setup.sh" "$ROOT/ci/"

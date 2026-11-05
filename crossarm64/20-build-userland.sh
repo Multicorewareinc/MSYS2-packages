@@ -74,7 +74,7 @@ for d in "${ORDER[@]}"; do
     echo "  configure: $(echo "$logs" | wc -l) config.log, still cross: $cross, guessed checks: $guess"
   fi
   for p in $(makepkg --config "$CONF" --packagelist 2>/dev/null); do
-    [[ -f $p ]] || { echo "  missing $p"; continue; }
+    [[ -f $p ]] || { echo "FAILED: $d did not create $p (log: $LOGS/$d.log)"; tail -30 "$LOGS/$d.log"; exit 1; }
     bsdtar -xf "$p" -C "$SYSROOT" --exclude '.PKGINFO' --exclude '.BUILDINFO' \
       --exclude '.MTREE' --exclude '.INSTALL' --exclude '.CHANGELOG' ||
       { echo "STAGE FAILED: $p"; exit 1; }

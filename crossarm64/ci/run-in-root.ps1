@@ -14,4 +14,9 @@ foreach ($v in 'SHELL', 'HOME', 'MSYSTEM', 'MSYS', 'CHERE_INVOKING', 'MSYS2_PATH
   Remove-Item "Env:$v" -ErrorAction SilentlyContinue
 }
 & $bash --login -c $Command
-exit $LASTEXITCODE
+$rc = $LASTEXITCODE
+
+# a test that hangs past its timeout can leave processes behind that keep the
+# root's binaries open, and the next stage cannot replace them
+& (Join-Path $PSScriptRoot 'stop-root-processes.ps1') -Root $Root
+exit $rc
