@@ -14,6 +14,7 @@ pkgs=(
   libiconv-devel gettext-devel
   autoconf-archive                       # mpfr
   tcl-devel                              # sqlite
+  gtk-doc                                # util-linux: autoreconf runs gtkdocize
   ncurses-devel                          # heimdal: native asn1_compile/slc build (bundled libedit)
   cocom                                  # msys2-runtime-aarch64 (stage 1)
   mingw-w64-cross-mingwarm64-gcc         # cross-msysarm64-w32api-runtime, cygrun.exe
