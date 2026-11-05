@@ -46,7 +46,9 @@ mkdir -p "$CACHE"
 ZIP="$CACHE/MinGit-${VER}-arm64.zip"
 if [ ! -f "$ZIP" ]; then
   say "downloading $(basename "$ZIP")"
-  curl -sL -o "$ZIP" "$URL" || die "download failed"
+  # -f: an HTTP error page must not end up cached as the zip
+  curl -fsSL --retry 5 --retry-all-errors -o "$ZIP.part" "$URL" || die "download failed"
+  mv -f "$ZIP.part" "$ZIP"
 fi
 say "source zip    : $ZIP ($(stat -c%s "$ZIP") bytes)"
 
