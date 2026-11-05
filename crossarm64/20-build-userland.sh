@@ -67,10 +67,12 @@ for d in "${ORDER[@]}"; do
   # keeping the first log.
   for try in 1 2; do
     makepkg --config "$CONF" -f -C -d --noconfirm --skippgpcheck --nocheck \
-      >"$LOGS/$d.log" 2>&1 && grep -q '^==> Finished making' "$LOGS/$d.log" && break
-    [[ $try == 1 ]] || { echo "FAILED: $d (log: $LOGS/$d.log)"; tail -30 "$LOGS/$d.log"; exit 1; }
+      >"$LOGS/$d.log" 2>&1
+    rc=$?
+    [[ $rc == 0 ]] && grep -q '^==> Finished making' "$LOGS/$d.log" && break
+    [[ $try == 1 ]] || { echo "FAILED: $d (status $rc, log: $LOGS/$d.log)"; tail -30 "$LOGS/$d.log"; exit 1; }
     mv -f "$LOGS/$d.log" "$LOGS/$d.try1.log"
-    echo "::warning::$d: makepkg stopped without finishing (log: $LOGS/$d.try1.log); trying again"
+    echo "::warning::$d: makepkg stopped without finishing (status $rc, log: $LOGS/$d.try1.log); trying again"
     tail -5 "$LOGS/$d.try1.log"
   done
   # every autoconf configure should have run natively, with nothing guessed
