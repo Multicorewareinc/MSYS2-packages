@@ -1,0 +1,4 @@
+# OpenSSH unit and t-exec failures known on aarch64 (one test per line, as
+# the summaries name them; # starts a comment).  Both fail on x86_64 MSYS2 too.
+unit/utf8               # utf8_badarg
+sftp-perm               # noacl mount: chmod 0400 gives 444

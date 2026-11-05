@@ -1,0 +1,26 @@
+# bash testsuite failures known on aarch64 (one test group per line, as
+# summary.txt names them; # starts a comment), from run 41962733160.  x86_64
+# MSYS2 fails the same number (crossarm64/README.md baseline: 63 / 23).
+run-assoc
+run-builtins
+run-complete
+run-coproc
+run-errors
+run-execscript
+run-glob-bracket
+run-glob-test
+run-globstar
+run-heredoc
+run-history
+run-ifs
+run-intl
+run-invocation
+run-new-exp
+run-posix2
+run-procsub
+run-read
+run-redir
+run-shopt
+run-type
+run-vredir
+run-jobs                # flaky, about 2 runs in 10 (README)
