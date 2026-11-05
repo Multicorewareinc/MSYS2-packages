@@ -62,10 +62,17 @@ for d in "${ORDER[@]}"; do
   echo "=== $(date +%T) building $d"
   cd "$REPO/$d" || exit 1
   prepare_cfgroot
-  if ! makepkg --config "$CONF" -f -C -d --noconfirm --skippgpcheck --nocheck \
-       >"$LOGS/$d.log" 2>&1; then
-    echo "FAILED: $d (log: $LOGS/$d.log)"; tail -30 "$LOGS/$d.log"; exit 1
-  fi
+  # makepkg (or a tool under it) sometimes just stops, with no error and
+  # often with status 0; not understood yet.  Try such a build once more,
+  # keeping the first log.
+  for try in 1 2; do
+    makepkg --config "$CONF" -f -C -d --noconfirm --skippgpcheck --nocheck \
+      >"$LOGS/$d.log" 2>&1 && grep -q '^==> Finished making' "$LOGS/$d.log" && break
+    [[ $try == 1 ]] || { echo "FAILED: $d (log: $LOGS/$d.log)"; tail -30 "$LOGS/$d.log"; exit 1; }
+    mv -f "$LOGS/$d.log" "$LOGS/$d.try1.log"
+    echo "::warning::$d: makepkg stopped without finishing (log: $LOGS/$d.try1.log); trying again"
+    tail -5 "$LOGS/$d.try1.log"
+  done
   # every autoconf configure should have run natively, with nothing guessed
   logs=$(find "$REPO/$d/src" -name config.log 2>/dev/null)
   if [[ -n $logs ]]; then
