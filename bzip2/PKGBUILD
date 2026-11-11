@@ -2,10 +2,10 @@
 
 pkgname=('bzip2' 'libbz2' 'libbz2-devel')
 pkgver=1.0.8
-pkgrel=4
+pkgrel=5
 pkgdesc="A high-quality data compression program"
 groups=('compression')
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:bzip2-1.0.6')
 url="http://www.bzip.org"
 msys2_repository_url='https://sourceware.org/git/bzip2.git'
@@ -31,8 +31,13 @@ build() {
   cd "${srcdir}/${pkgname}-${pkgver}"
 
   CFLAGS+=" -D_FILE_OFFSET_BITS=64"
+  # aarch64-pc-cygwin cross: --host selects the cross compiler.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+  fi
   ./configure \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --prefix=/usr \
     --enable-shared
 
