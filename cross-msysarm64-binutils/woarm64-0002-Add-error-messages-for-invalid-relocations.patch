@@ -1,7 +1,7 @@
 From 0575dad7b085d59b2ead44dadfad37c712a6e2ab Mon Sep 17 00:00:00 2001
 From: Zac Walker <zac.walker@linaro.org>
 Date: Wed, 11 Oct 2023 13:04:45 +0200
-Subject: [PATCH 02/11] Add error messages for invalid relocations.
+Subject: [PATCH 02/10] Add error messages for invalid relocations.
 
 (cherry picked from commit d25493e017dc32c08298bb34ba086a98837b1254)
 ---
