@@ -89,15 +89,22 @@ pacman -R --recursive --unneeded --noconfirm --noprogressbar git python
 # Enable linting
 export MAKEPKG_LINT_PKGBUILD=1
 
-# Share one source cache across packages. cross-msysarm64-gcc and
-# cross-msysarm64-gcc-stage1 pull the same gcc commit, and a bare clone of it
-# costs ~25-30 minutes on a runner; without this it is paid twice.
-export SRCDEST="${PWD}/.srccache"
-mkdir -p "${SRCDEST}"
+# cross-msysarm64-gcc and cross-msysarm64-gcc-stage1 pull the same gcc commit,
+# and a bare clone of it costs ~25-30 minutes on a runner; share the download
+# between those two only.  Every other package keeps makepkg's default
+# per-package source directory.
+gcc_srccache="${PWD}/.srccache"
 
 message 'Building packages'
 for package in "${packages[@]}"; do
     echo "::group::[build] ${package}"
+    case "${package}" in
+        cross-msysarm64-gcc-stage1|cross-msysarm64-gcc)
+            export SRCDEST="${gcc_srccache}"
+            mkdir -p "${SRCDEST}" ;;
+        *)
+            unset SRCDEST ;;
+    esac
     execute 'Clear cache' pacman -Scc --noconfirm
     execute 'Fetch keys' "$DIR/fetch-validpgpkeys.sh"
     cp -r ${package} B && cd B
