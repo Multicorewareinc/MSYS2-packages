@@ -1,7 +1,7 @@
 From 93cc1be8c9264ee1c75a9e084b8d5d173ebe2f7d Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Radek=20Barto=C5=88?= <radek.barton@microsoft.com>
 Date: Fri, 10 Jan 2025 11:34:16 +0100
-Subject: [PATCH 04/11] Add `aarch64-pc-cygwin` target
+Subject: [PATCH 04/10] Add `aarch64-pc-cygwin` target
 
 Co-authored-by: Evgeny Karpov <eukarpov@gmail.com>
 (cherry picked from commit fec9f8f5e66d6041b531a38bd7972fc0deccdc62)
@@ -16,9 +16,9 @@ Co-authored-by: Evgeny Karpov <eukarpov@gmail.com>
  gdbserver/configure.srv                | 7 +++++++
  ld/configure.tgt                       | 4 ++--
  ld/emultempl/pe.em                     | 4 ++++
- ld/emultempl/pep.em                    | 8 ++++++--
+ ld/emultempl/pep.em                    | 14 +++++++++++---
  readline/readline/support/config.guess | 3 +++
- 12 files changed, 31 insertions(+), 9 deletions(-)
+ 12 files changed, 36 insertions(+), 10 deletions(-)
 
 diff --git a/bfd/config.bfd b/bfd/config.bfd
 index 9900e5c7470..99e9bcd8316 100644
@@ -177,18 +177,22 @@ diff --git a/ld/emultempl/pep.em b/ld/emultempl/pep.em
 index c1a7c14dbd1..d5f0c9fefae 100644
 --- a/ld/emultempl/pep.em
 +++ b/ld/emultempl/pep.em
-@@ -7,6 +7,10 @@ else
+@@ -7,6 +7,14 @@ else
  fi
  
  case ${target} in
 +  aarch64-*-cygwin*)
++    # Windows on ARM64 only loads images marked DYNAMIC_BASE and NX_COMPAT.
++    # HIGH_ENTROPY_VA stays off, as on x86_64 Cygwin: the cygheap needs
++    # its fixed address for fork.
 +    move_default_addr_high=1
-+    cygwin_behavior=0;
++    mingw_behavior=0
++    default_dll_characteristics="(IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLL_CHARACTERISTICS_NX_COMPAT)"
 +    ;;
    *-*-cygwin*)
      move_default_addr_high=1
      mingw_behavior=0
-@@ -82,9 +86,9 @@ fragment <<EOF
+@@ -82,9 +90,9 @@ fragment <<EOF
  EOF
  
  case ${target} in
@@ -200,6 +204,15 @@ index c1a7c14dbd1..d5f0c9fefae 100644
  fragment <<EOF
  #include "pdb.h"
  EOF
+@@ -134,7 +142,7 @@ fragment <<EOF
+ 					 ? IMAGE_DLL_CHARACTERISTICS_DYNAMIC_BASE \
+ 					   | IMAGE_DLL_CHARACTERISTICS_HIGH_ENTROPY_VA \
+ 					   | IMAGE_DLL_CHARACTERISTICS_NX_COMPAT \
+-					 : 0)
++					 : ${default_dll_characteristics:-0})
+ 
+ #if defined(TARGET_IS_i386pep) || defined(COFF_WITH_peAArch64) || ! defined(DLL_SUPPORT)
+ #define	PE_DEF_SUBSYSTEM		IMAGE_SUBSYSTEM_WINDOWS_CUI
 diff --git a/readline/readline/support/config.guess b/readline/readline/support/config.guess
 index b66eb09d615..e03258bf9ca 100644
 --- a/readline/readline/support/config.guess

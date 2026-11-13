@@ -1,7 +1,7 @@
 From 12065e7bb344d7c92b0e965dbab58f9e0a129f70 Mon Sep 17 00:00:00 2001
 From: Thirumalai Nagalingam <thirumalai.nagalingam@multicorewareinc.com>
 Date: Wed, 7 Jan 2026 15:24:53 +0530
-Subject: [PATCH 06/11] PE/COFF AArch64: avoid ADRP for ABS small constants
+Subject: [PATCH 06/10] PE/COFF AArch64: avoid ADRP for ABS small constants
 
 Implement ABS fix for small ABS constants using MOVZ + add combo.
 

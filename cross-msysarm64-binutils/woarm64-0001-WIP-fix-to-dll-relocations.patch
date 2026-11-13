@@ -1,7 +1,7 @@
 From 9c0508a25f91acfb921ad37cc024572a1fa05c42 Mon Sep 17 00:00:00 2001
 From: Zac Walker <zac.walker@linaro.org>
 Date: Wed, 16 Aug 2023 15:19:24 +0200
-Subject: [PATCH 01/11] WIP fix to dll relocations
+Subject: [PATCH 01/10] WIP fix to dll relocations
 
 (cherry picked from commit 814a7c9d5b82691eaf0b434470375419dd36dc3b)
 ---

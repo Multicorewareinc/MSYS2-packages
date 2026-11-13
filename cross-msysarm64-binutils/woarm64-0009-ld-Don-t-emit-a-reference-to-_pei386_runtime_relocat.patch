@@ -1,7 +1,7 @@
 From 3f5fca5eb96a91463bade6f709485f0fc4427da4 Mon Sep 17 00:00:00 2001
 From: Jon Turney <jon.turney@dronecode.org.uk>
 Date: Fri, 16 Oct 2026 11:04:37 +0530
-Subject: [PATCH 10/11] ld: Don't emit a reference to _pei386_runtime_relocator
+Subject: [PATCH 09/10] ld: Don't emit a reference to _pei386_runtime_relocator
  for PE+
 
 ld synthesises a reference to _pei386_runtime_relocator to satisfy a
