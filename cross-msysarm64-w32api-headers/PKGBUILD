@@ -26,16 +26,16 @@ source=(
   woarm64-0009-basetsd-aarch64-64bit-pointers.patch
 )
 
-sha256sums=('SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP')
+sha256sums=('6eb7f7eca481233502247e5b983db9b94c4f3aabea55b5023085646494a95013'
+            '94997ec134d05057ffe1919b6a00c83d3ccf20e5dc972ad5194a14a04012e63d'
+            '868123a94e0ea9a412deaed4eecebd2c8ab37b81a9a9d1e2f91031a3128f5a71'
+            'e2bbeeec0a09c867f178e8fa45176bb7ec8808fd2dd63211220b63058f3a6e59'
+            'a435fbde01e2376416999a8c43b670ef3e0f3e52d3b3897862ac675cdcfee7f4'
+            'b87d14dbca0955a56c95e4e59d893e9d20accce3b860607fc85313a575be27b9'
+            '436f6ba3cf8f5d8b98b787bae4eaa4f560c731c50d814b4d9d600e5c691dc468'
+            'bb1e073ee73595a3c0013d27f014f34d8f2fef12a650a49be7972542930cee1f'
+            '8bb671b17728165a8d5f2341d65999b77beb13d5ed5a76b88a5ddcb898afef5b'
+            '3691ac7db1a7e110d9c51b60f7b9d4186b900715bbc4db90a57e6bfbafe8ccea')
 
 _target=aarch64-pc-cygwin
 _sysroot=/usr/${_target}

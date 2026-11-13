@@ -47,7 +47,7 @@ makedepends=(
 )
 _GIT_TAG="release-${pkgver//\./_}"
 source=("git://sourceware.org/git/cygwin-apps/windows-default-manifest.git#tag=${_GIT_TAG}")
-sha256sums=('SKIP')
+sha256sums=('69743b1ad7e6046d95a04b9aa565e3216a570dae5ff48e615f96a08781b56aa0')
 msys2_references=(
   'cygwin: windows-default-manifest'
 )
