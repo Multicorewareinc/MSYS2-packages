@@ -32,20 +32,20 @@ source=("${_realname}"::"git+https://sourceware.org/git/binutils-gdb.git#commit=
         0002-check-for-unusual-file-harder.patch
         0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch
         9999-workarounds.patch)
-sha256sums=('SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP')
+sha256sums=('55be6e84f7e286097bc44c7506148434f15e889fa95f98c6979c38cca16ffcdd'
+            '442d9e367880b1c987c63c6a045babc9886b47f792c64659eb35396a3e46addb'
+            'f696531a543b48cc3395183d9e849cdc1745f88a88cdd863ba06efd69e13406c'
+            '391d74950d93e4cca4a2ac6d71a70df64a41abdf759257fe4503713d8c4f2937'
+            '5789794c0822eaa6984573b354bceb4e3eddf2e0b9fc83880615af59e91e33f1'
+            '3629be3c09d7a1df2f19848e0a895ee0b72cdfb1bed77a71a974237af4d6c070'
+            '48f59f1640f9033e265a7bd8123658df8857aa03b37a43af6f7b70e6cf04a47c'
+            '6cd3b25faebf67f2c8f9313d76064a76025f5a14c432d82e76ba11d4074b831a'
+            '82f2cca12dd7b679523567d098798eb8820cbe62ebced72e0d72b8e494fe44af'
+            '506e037a1f1856526d67b197b4d8944ee6cbfc7bfce448c7086c6d4252bc55e0'
+            '166f0bf3f84257352a07b2f50a599f40f2bac3e220b7b9d145963aac98eed83b'
+            '2c99345fc575c3a060d6677537f636c6c4154fac0fde508070f3b6296c1060d4'
+            '286522f6245430cb4c37bff6df9a905509f310c636f018cdc6a09d1967bac337'
+            '85f19cec1d21b88312c9efa90d83b896ac3b25c32939e2d2e4e1cbce4ea8114d')
 
 apply_patch_with_msg() {
   for _patch in "$@"; do
