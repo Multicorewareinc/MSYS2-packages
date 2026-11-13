@@ -4,7 +4,7 @@ _realname=msys2-runtime
 pkgbase=${_realname}
 pkgname=cross-msysarm64-runtime
 pkgver=3.6.7
-pkgrel=20
+pkgrel=21
 pkgdesc="Cygwin POSIX emulation engine for aarch64-pc-cygwin"
 arch=('x86_64')
 options=('!strip' '!buildflags')
@@ -293,14 +293,6 @@ prepare() {
   #   - GCC stage1 already built → libgcc.a, crtbegin/end.o available
   #   - Only crt0.o and libcygwin.a are stubbed (they ARE the build output)
   # -------------------------------------------------------------------------
-
-  # --- Real: libgcc.a ---
-  # From cross-msysarm64-gcc-stage1. Copy to sysroot/lib for linker discovery.
-  # Resolve the real path from the compiler (version-proof; -print-libgcc-file-name
-  # IS the absolute path to libgcc.a) -- never hardcode the gcc version dir.
-  cp "$(aarch64-pc-cygwin-gcc -print-libgcc-file-name)" \
-    /usr/aarch64-pc-cygwin/lib/libgcc.a
-  echo "libgcc.a from gcc-stage1 installed"
 
   # devices.cc: the old #pragma GCC optimize("O0") hack was removed.
   # At the build's -O1 it compiles cleanly (the ldp_fusion SIGSEGV is -O2-only);
