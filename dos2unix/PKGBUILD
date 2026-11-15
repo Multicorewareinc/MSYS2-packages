@@ -2,9 +2,9 @@
 
 pkgname=dos2unix
 pkgver=7.5.7
-pkgrel=1
+pkgrel=2
 pkgdesc='Text file format converter'
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url='https://waterlander.net/dos2unix/'
 license=('spdx:BSD-2-Clause')
 depends=('libintl')
@@ -19,7 +19,13 @@ prepare() {
 
 build() {
   cd ${srcdir}/${pkgname}-${pkgver}
-  make DEBUG=1
+  # aarch64-pc-cygwin cross: only the compiler changes; the Makefile picks
+  # the MSYS settings from `uname` on both sides.
+  local _xargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs=(CC=aarch64-pc-cygwin-gcc)
+  fi
+  make DEBUG=1 "${_xargs[@]}"
 }
 
 package() {
