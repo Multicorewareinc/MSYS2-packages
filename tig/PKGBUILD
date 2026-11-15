@@ -2,7 +2,7 @@
 
 pkgname=tig
 pkgver=2.6.1
-pkgrel=1
+pkgrel=2
 pkgdesc='Text-mode interface for Git'
 depends=('git' 'libreadline' 'ncurses')
 makedepends=('asciidoc' 'xmlto' 'libreadline-devel' 'ncurses-devel' 'libiconv-devel' 'autotools' 'gcc')
@@ -14,7 +14,7 @@ msys2_references=(
   "gentoo: dev-vcs/tig"
 )
 license=('spdx:GPL-2.0-or-later')
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 backup=('etc/tigrc')
 source=("https://github.com/jonas/${pkgname}/releases/download/${pkgname}-${pkgver}/${pkgname}-${pkgver}.tar.gz")
 sha256sums=('5adeabdcd93aa0423d618da8b878b53482bef6e0e9e1fe224acc0f18031fe91e')
@@ -25,19 +25,44 @@ prepare() {
 
 build() {
   cd "${srcdir}/${pkgname}-${pkgver}"
+  # aarch64-pc-cygwin cross: --host selects the cross compiler; the
+  # libraries it links come from the toolchain sysroot.
+  #  - configure does not run its readline version probe when cross
+  #    compiling: it assumes 4.2, rejects it (6.3 is the minimum) and builds
+  #    without readline.  Hand it the version of the sysroot's readline.
+  #  - The Makefile links `-o src/tig`.  The native Cygwin gcc adds .exe to
+  #    that, the cross gcc does not, so name the program (and its rule)
+  #    with the suffix.
+  #  - The readline and iconv checks otherwise add the prefix (/usr), i.e.
+  #    the build machine's /usr/include and /usr/lib, to the search paths.
+  local _xargs=(--build=${CHOST}) _make=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin --with-libiconv=/usr/aarch64-pc-cygwin/usr)
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+    export ac_cv_rl_prefix=/usr/aarch64-pc-cygwin/usr
+    local _rl=${ac_cv_rl_prefix}/include/readline/readline.h
+    export ac_cv_rl_version="$(sed -n 's/^#define RL_VERSION_MAJOR[[:space:]]*//p' ${_rl}).$(sed -n 's/^#define RL_VERSION_MINOR[[:space:]]*//p' ${_rl})"
+    _make=(EXE=src/tig.exe)
+    sed -i 's|^src/tig: \(.*\)$|src/tig.exe: \1\n\t$(QUIET_LINK)$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@|' Makefile
+  fi
 
-  CPPFLAGS="-D_GNU_SOURCE" \
+  CPPFLAGS="${CPPFLAGS} -D_GNU_SOURCE" \
   ./configure \
     --prefix=/usr \
     --sysconfdir=/etc \
     --localstatedir=/var \
-    --build=${CHOST}
-  make
+    "${_xargs[@]}"
+  make "${_make[@]}"
 }
 
 package() {
   cd "${srcdir}/${pkgname}-${pkgver}"
 
-  make DESTDIR="${pkgdir}" install install-doc-man
+  local _make=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _make=(EXE=src/tig.exe)
+  fi
+  make DESTDIR="${pkgdir}" "${_make[@]}" install install-doc-man
   install -Dm0644 contrib/tig-completion.bash "${pkgdir}/usr/share/bash-completion/completions/tig"
 }
