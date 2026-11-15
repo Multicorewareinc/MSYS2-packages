@@ -71,6 +71,15 @@ package_zstd() {
   cp -rf ${srcdir}/dest/usr/bin ${pkgdir}/usr/bin/
   cp -rf ${srcdir}/dest/usr/share/man ${pkgdir}/usr/share/man/
   rm -f ${pkgdir}/usr/bin/*.dll
+  # aarch64-pc-cygwin cross: zstdcat, unzstd and zstdmt are made with
+  # `cmake -E create_symlink zstd <name>`; on the x86_64 build host they
+  # become copies of zstd.exe without the .exe that the x86_64 package has.
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    local _f
+    for _f in unzstd zstdcat zstdmt; do
+      mv "${pkgdir}/usr/bin/${_f}" "${pkgdir}/usr/bin/${_f}.exe"
+    done
+  fi
   install -D -m644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgbase}/LICENSE"
 }
 
