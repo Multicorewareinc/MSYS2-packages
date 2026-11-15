@@ -3,9 +3,9 @@
 
 pkgname=which
 pkgver=2.25
-pkgrel=1
+pkgrel=2
 pkgdesc="A utility to show the full path of commands"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://savannah.gnu.org/projects/which/"
 msys2_repository_url='https://cgit.git.savannah.gnu.org/cgit/which.git'
 msys2_references=(
@@ -29,10 +29,14 @@ build() {
   [[ -d ${srcdir}/build-${CHOST} ]] && rm -rf ${srcdir}/build-${CHOST}
   mkdir ${srcdir}/build-${CHOST} && cd ${srcdir}/build-${CHOST}
 
+  # aarch64-pc-cygwin cross: --host selects the cross compiler.
+  local _xargs=(--build=${CHOST} --host=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs=(--build=${CHOST} --host=aarch64-pc-cygwin)
+  fi
   ../${pkgname}-${pkgver}/configure \
     --prefix=/usr \
-    --build=${CHOST} \
-    --host=${CHOST} \
+    "${_xargs[@]}" \
     --target=${CHOST}
 
   make
