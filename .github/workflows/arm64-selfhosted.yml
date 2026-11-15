@@ -11,7 +11,7 @@ name: arm64-selfhosted
 
 on:
   push:
-    branches: [aarch64-arm64-selfhosted-ci]
+    branches: [aarch64-arm64-selfhosted-ci, pr6661-promises-ci]
   workflow_dispatch:
     inputs:
       rebuild_toolchain:
