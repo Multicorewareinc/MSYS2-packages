@@ -38,8 +38,13 @@ build() {
   # --without-lib*-prefix options gettext's configure looks for libintl
   # under the install prefix, finds the host /usr/lib/libintl.dll.a, fails
   # to link it and quietly builds without translations.
-  local _xargs=(--build=${CHOST})
+  # xz installs the unxz, xzcat, lzma, unlzma and lzcat links without .exe
+  # on cygwin and msys hosts and leaves the suffix to the native ln, which
+  # adds it when linking to xz.exe; the x86-64 build host's ln does not, so
+  # name them as in the x86-64 package.
+  local _xargs=(--build=${CHOST}) _make=()
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _make=('LN_EXEEXT=$(EXEEXT)')
     _xargs+=(--host=aarch64-pc-cygwin
              --without-libintl-prefix --without-libiconv-prefix)
     CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
@@ -52,7 +57,7 @@ build() {
     --enable-static \
     --enable-doxygen
   make
-  make DESTDIR="${srcdir}/dest" install
+  make DESTDIR="${srcdir}/dest" "${_make[@]}" install
 }
 
 check() {
