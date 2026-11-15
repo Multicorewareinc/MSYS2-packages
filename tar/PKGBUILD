@@ -2,9 +2,9 @@
 
 pkgname=tar
 pkgver=1.35
-pkgrel=3
+pkgrel=4
 pkgdesc="Utility used to store, backup, and transport files"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.gnu.org/software/tar/tar.html"
 msys2_repository_url='https://cgit.git.savannah.gnu.org/cgit/tar.git'
 msys2_references=(
@@ -45,6 +45,14 @@ prepare() {
 
 build() {
   cd ${srcdir}/${pkgname}-${pkgver}
+  # aarch64-pc-cygwin cross: --host selects the cross compiler; the
+  # libraries it links come from the toolchain sysroot.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+  fi
 
   export gl_cv_have_weak=no
   local -a extra_config
@@ -54,7 +62,7 @@ build() {
     extra_config+=("--disable-year2038")
   fi
   ./configure \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --prefix=/usr \
     --sbindir=/usr/bin \
     --libexecdir=/usr/lib/tar \
