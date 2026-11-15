@@ -34,10 +34,14 @@ build() {
   export lt_cv_deplibs_check_method='pass_all'
   export MSYSTEM=CYGWIN
   # aarch64-pc-cygwin cross: --host selects the cross compiler; the
-  # libraries it links come from the toolchain sysroot.
+  # libraries it links come from the toolchain sysroot.  Without the
+  # --without-lib*-prefix options gettext's configure looks for libintl
+  # under the install prefix, finds the host /usr/lib/libintl.dll.a, fails
+  # to link it and quietly builds without translations.
   local _xargs=(--build=${CHOST})
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
-    _xargs+=(--host=aarch64-pc-cygwin)
+    _xargs+=(--host=aarch64-pc-cygwin
+             --without-libintl-prefix --without-libiconv-prefix)
     CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
     LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
   fi
