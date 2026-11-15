@@ -2,9 +2,9 @@
 
 pkgname=file
 pkgver=5.48
-pkgrel=2
+pkgrel=3
 pkgdesc="File type identification utility"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:BSD-2-Clause')
 url="https://www.darwinsys.com/file/"
 msys2_repository_url="https://github.com/file/file"
@@ -28,11 +28,19 @@ prepare() {
 build() {
   cd "${srcdir}/${pkgname}-${pkgver}"
 
+  # aarch64-pc-cygwin cross: --host selects the cross compiler and the
+  # compression libraries come from the toolchain sysroot.  Compiling the
+  # magic database then needs a build-machine `file` of the same version
+  # (configure checks for it): the host's own file package.
+  local _xargs=(--build=${CHOST} --host=${CHOST} --target=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs=(--build=${CHOST} --host=aarch64-pc-cygwin)
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+  fi
   ./configure \
     --prefix=/usr \
-    --build=${CHOST} \
-    --host=${CHOST} \
-    --target=${CHOST} \
+    "${_xargs[@]}" \
     --enable-fsect-man5 \
     --enable-zlib \
     --enable-bzlib \
