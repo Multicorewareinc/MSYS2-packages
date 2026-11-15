@@ -2,9 +2,9 @@
 
 pkgname=('lz4' 'liblz4' 'liblz4-devel')
 pkgver=1.10.0
-pkgrel=1
+pkgrel=2
 pkgdesc='Very fast lossless compression algorithm'
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 makedepends=('make' 'gcc')
 url='https://lz4.github.io/lz4/'
 msys2_repository_url="https://github.com/lz4/lz4"
@@ -19,8 +19,20 @@ options=(!libtool)
 
 build() {
   cd ${srcdir}/lz4-${pkgver}
-  make CC=/usr/bin/gcc CFLAGS="${CFLAGS}" all
-  make DESTDIR=${srcdir}/dest PREFIX=/usr install
+  # aarch64-pc-cygwin cross: the Makefiles pick the DLL naming from
+  # `uname` (MSYS on both sides), so only the compiler and the tools that
+  # build the import library change.  Build `allmost` (library and lz4)
+  # rather than `all`: `all` also runs contrib/gen_manual, a program it has
+  # just compiled for the target, to regenerate the HTML manuals.
+  local _cc=/usr/bin/gcc _xargs=() _target=all
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _cc=aarch64-pc-cygwin-gcc
+    _xargs=(AR=aarch64-pc-cygwin-ar WINDRES=aarch64-pc-cygwin-windres
+            LDFLAGS="${LDFLAGS}")
+    _target=allmost
+  fi
+  make CC=${_cc} CFLAGS="${CFLAGS}" "${_xargs[@]}" ${_target}
+  make DESTDIR=${srcdir}/dest PREFIX=/usr "${_xargs[@]}" install
 }
 
 check() {
