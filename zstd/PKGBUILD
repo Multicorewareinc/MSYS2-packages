@@ -3,9 +3,9 @@
 pkgbase=zstd
 pkgname=('zstd' 'libzstd' 'libzstd-devel')
 pkgver=1.5.7
-pkgrel=1
+pkgrel=2
 pkgdesc="Zstandard - Fast real-time compression algorithm"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url='https://facebook.github.io/zstd/'
 msys2_repository_url="https://github.com/facebook/zstd"
 msys2_references=(
@@ -29,9 +29,31 @@ prepare() {
 build() {
   cd "${srcdir}/${pkgbase}-${pkgver}"
 
+  # aarch64-pc-cygwin cross: as in libcbor, CMAKE_SYSTEM_NAME=MSYS switches
+  # cmake into cross mode and keeps the msys- DLL prefix, and the find root
+  # keeps host headers and libraries out.  Build type None: Release adds -O3,
+  # where the aarch64-pc-cygwin compiler still hangs on some files
+  # (zstd_decompress_block.c); the cross config builds everything at -O0.
+  local _xargs=() _buildtype=Release
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _buildtype=None
+    _xargs=(
+      -DCMAKE_SYSTEM_NAME=MSYS
+      -DCMAKE_SYSTEM_PROCESSOR=aarch64
+      -DCMAKE_C_COMPILER=aarch64-pc-cygwin-gcc
+      -DCMAKE_CXX_COMPILER=aarch64-pc-cygwin-g++
+      -DCMAKE_RC_COMPILER=aarch64-pc-cygwin-windres
+      -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-pc-cygwin/usr
+      -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
+      -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY
+      -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY
+    )
+  fi
+
   cmake \
+    "${_xargs[@]}" \
     -GNinja \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE=${_buildtype} \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DZSTD_PROGRAMS_LINK_SHARED=ON \
     ../${pkgbase}-${pkgver}/build/cmake
