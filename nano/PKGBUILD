@@ -2,9 +2,9 @@
 
 pkgname=nano
 pkgver=9.3
-pkgrel=1
+pkgrel=2
 pkgdesc="Pico editor clone with enhancements"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:GPL-3.0-or-later')
 url="https://www.nano-editor.org"
 msys2_repository_url="https://cgit.git.savannah.gnu.org/cgit/nano.git"
@@ -38,8 +38,20 @@ prepare() {
 
 build() {
   cd ${srcdir}/${pkgname}-${pkgver}
+  # aarch64-pc-cygwin cross: --host selects the cross compiler; the
+  # libraries it links come from the toolchain sysroot.  Without the
+  # --without-lib*-prefix options gettext's configure looks for libintl
+  # under the install prefix, finds the host /usr/lib/libintl.dll.a, fails
+  # to link it and quietly builds without translations.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin
+             --without-libintl-prefix --without-libiconv-prefix)
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+  fi
 
-  ./configure --build=${CHOST} \
+  ./configure "${_xargs[@]}" \
     --prefix=/usr \
     --sysconfdir=/etc \
     --enable-color \
