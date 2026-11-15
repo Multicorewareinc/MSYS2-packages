@@ -1,13 +1,13 @@
 _realname=ssh-pageant
 pkgname="${_realname}"
 pkgver=1.4.r15.gc804ba4
-pkgrel=1
+pkgrel=2
 pkgdesc="An SSH authentication agent for Cygwin/MSYS to PuTTY's Pageant"
 _commit="c804ba43bfd63bc058b7ab86a96953572511e263"
 url="https://github.com/cuviper/ssh-pageant"
 msys2_repository_url='https://github.com/cuviper/ssh-pageant'
 license=("spdx:GPL-3.0-or-later")
-arch=("i686" "x86_64")
+arch=("i686" "x86_64" "aarch64")
 makedepends=("git" "gcc")
 provides=("${_realname}-git")
 conflicts=("${_realname}-git")
@@ -23,7 +23,12 @@ pkgver() {
 
 build() {
   cd "$srcdir/$_realname"
-  make
+  # aarch64-pc-cygwin cross: only the compiler changes.
+  local _xargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs=(CC=aarch64-pc-cygwin-gcc)
+  fi
+  make "${_xargs[@]}"
 }
 
 package() {
