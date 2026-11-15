@@ -3,9 +3,9 @@
 pkgbase=libffi
 pkgname=('libffi' 'libffi-devel')
 pkgver=3.8.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Portable, high level programming interface to various calling conventions"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://sourceware.org/libffi/"
 msys2_repository_url="https://github.com/libffi/libffi"
 msys2_references=(
@@ -16,11 +16,17 @@ license=('spdx:MIT')
 depends=()
 checkdepends=('dejagnu')
 makedepends=('autotools' 'gcc')
-source=(https://github.com/libffi/libffi/releases/download/v$pkgver/libffi-$pkgver.tar.gz)
-sha256sums=('7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4')
+source=(https://github.com/libffi/libffi/releases/download/v$pkgver/libffi-$pkgver.tar.gz
+        0001-aarch64-Cygwin-follow-the-Windows-ARM64-ABI.patch)
+sha256sums=('7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4'
+            '869dcd1da94ee3bf3c684f2877de62849026e8deffa08b3276c0582375dfd045')
 
 prepare() {
   cd ${pkgname}-${pkgver}
+
+  # aarch64: Cygwin uses the Windows ARM64 ABI (x18, variadic arguments,
+  # instruction cache flush)
+  patch -p1 -i ../0001-aarch64-Cygwin-follow-the-Windows-ARM64-ABI.patch
 
   autoreconf -vfi
 }
@@ -36,10 +42,19 @@ build() {
   if check_option "debug" "y"; then
     extra_config+=("--enable-debug")
   fi
+  # aarch64-pc-cygwin cross: --host selects the cross compiler.  configure
+  # turns on static trampolines for every *-cygwin* target; the aarch64
+  # trampoline table is aligned to 2**14 (16K pages, a Linux assumption),
+  # which a PE section cannot represent, so the assembler rejects sysv.S.
+  # Use the regular closure allocator instead.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin --disable-exec-static-tramp)
+  fi
   ${srcdir}/${pkgname}-${pkgver}/configure \
     --prefix=/usr \
     --srcdir=${srcdir}/${pkgname}-${pkgver} \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --enable-static \
     --enable-shared \
     "${extra_config[@]}"

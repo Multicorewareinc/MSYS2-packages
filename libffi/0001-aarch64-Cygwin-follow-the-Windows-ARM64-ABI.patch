@@ -1,0 +1,70 @@
+From: aswin-mcw <aswin.kalies@multicorewareinc.com>
+Subject: [PATCH] aarch64: Cygwin follows the Windows ARM64 ABI
+
+Cygwin on ARM64 runs on Windows and uses its calling convention, but it
+does not define _WIN32, so libffi treated it as a Linux-style AAPCS64
+target:
+
+ - FFI_GO_CLOSURES was enabled, and ffi_call_SYSV installed the
+   (usually NULL) static chain in x18 on every call.  x18 holds the TEB
+   pointer on Windows ARM64; the next access to it faults and the
+   process dies silently.
+
+ - FFI_DEFAULT_ABI was FFI_SYSV, which passes floating-point variadic
+   arguments in V registers.  The Windows ARM64 ABI, which the compiler
+   uses for aarch64-*-cygwin, passes them in X registers (FFI_WIN64).
+
+ - The closure trampolines were flushed with __builtin___clear_cache.
+   libgcc implements it by reading CTR_EL0, which Windows does not let
+   user mode read (SIGILL); use FlushInstructionCache, as for _WIN32.
+
+Signed-off-by: aswin-mcw <aswin.kalies@multicorewareinc.com>
+---
+--- a/src/aarch64/ffi.c
++++ b/src/aarch64/ffi.c
+@@ -30,6 +30,11 @@
+ #ifdef _WIN32
+ #define WIN32_LEAN_AND_MEAN
+ #include <windows.h> /* FlushInstructionCache */
++#elif defined (__CYGWIN__)
++/* kernel32; <windows.h> does not mix well with the POSIX headers */
++extern void *__stdcall GetCurrentProcess (void);
++extern int __stdcall FlushInstructionCache (void *, const void *,
++                                            unsigned long long);
+ #endif
+ #include <tramp.h>
+ 
+@@ -81,6 +86,11 @@
+ {
+ #if defined (__clang__) && defined (__APPLE__)
+   sys_icache_invalidate (start, (char *)end - (char *)start);
++#elif defined (__CYGWIN__)
++  /* libgcc's __clear_cache reads CTR_EL0, which Windows does not let
++     user mode read.  */
++  FlushInstructionCache (GetCurrentProcess (), start,
++                         (char *)end - (char *)start);
+ #elif defined (__GNUC__)
+   __builtin___clear_cache (start, end);
+ #elif defined (_WIN32)
+--- a/src/aarch64/ffitarget.h
++++ b/src/aarch64/ffitarget.h
+@@ -47,7 +47,7 @@
+     FFI_SYSV,
+     FFI_WIN64,
+     FFI_LAST_ABI,
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(__CYGWIN__)
+     FFI_DEFAULT_ABI = FFI_WIN64
+ #else
+     FFI_DEFAULT_ABI = FFI_SYSV
+@@ -83,8 +83,8 @@
+ 
+ #if defined (__APPLE__)
+ #define FFI_EXTRA_CIF_FIELDS unsigned aarch64_nfixedargs
+-#elif !defined(_WIN32) && !defined(__ANDROID__)
+-/* iOS, Windows and Android reserve x18 for the system.  Disable Go closures until
++#elif !defined(_WIN32) && !defined(__CYGWIN__) && !defined(__ANDROID__)
++/* iOS, Windows (Cygwin included) and Android reserve x18 for the system.  Disable Go closures until
+    a new static chain is chosen.  */
+ #define FFI_GO_CLOSURES 1
+ #endif
