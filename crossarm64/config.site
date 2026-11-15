@@ -22,6 +22,14 @@ if test "$cross_compiling" = yes; then
   cross_compiling=maybe
 fi
 
+# Programs are .exe files, as natively.  The cross GCC does not add the
+# suffix by itself (gcc/config/aarch64/cygming.h lacks the
+# TARGET_EXECUTABLE_SUFFIX of i386/cygming.h), so configure finds a.out,
+# sets EXEEXT to nothing, and only programs linked through libtool get
+# their .exe; Makefile rules and install hooks that name $(EXEEXT) produce
+# extensionless files.  configure keeps a preset value.
+: ${ac_cv_exeext=.exe}
+
 # gettext's and libiconv's search macros (AM_ICONV, AM_GNU_GETTEXT) look in
 # $prefix, i.e. the build machine's /usr, find the x86-64 libiconv/libintl
 # there, fail to link them and drop iconv and NLS support (issue #52).  The
