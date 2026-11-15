@@ -2,9 +2,9 @@
 
 pkgname=unzip
 pkgver=6.0
-pkgrel=7
+pkgrel=8
 pkgdesc="Unpacks .zip archives such as those made by PKZIP"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="http://www.info-zip.org/"
 msys2_references=(
   "anitya: 8684"
@@ -116,18 +116,41 @@ build() {
 
   sed -i "/MANDIR =/s#)/#)/share/#" unix/Makefile
 
+  # aarch64-pc-cygwin cross: generic_gcc hard-codes CC="gcc -std=gnu89" for
+  # its sub-make, so call `generic` with the cross compiler instead.  The
+  # sysroot paths go into CF_NOOPT because unix/configure links its libbz2
+  # probe with only those flags; without the -L it quietly drops bzip2.
+  # (Its large file and wchar_t probes cannot run their test program here;
+  # CFLAGS above already define LARGE_FILE_SUPPORT and UNICODE_SUPPORT.)
+  local _target=generic_gcc _cc=gcc _sys= _lib=
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _target=generic
+    _cc="aarch64-pc-cygwin-gcc -std=gnu89"
+    _sys=" -I/usr/aarch64-pc-cygwin/usr/include -L/usr/aarch64-pc-cygwin/usr/lib"
+    _lib="-L/usr/aarch64-pc-cygwin/usr/lib "
+  fi
   make \
-    -f unix/Makefile generic_gcc CC=gcc LD=gcc AS=gcc \
-    CF_NOOPT="${CFLAGS} -DUNIX -I." \
-    LFLAGS2="-liconv" \
+    -f unix/Makefile ${_target} CC="${_cc}" LD="${_cc}" AS="${_cc}" \
+    CF_NOOPT="${CFLAGS} -DUNIX -I.${_sys}" \
+    LFLAGS2="${_lib}-liconv" \
     E=".exe" CP="cp" LN="ln"
 }
 
 package() {
   cd ${srcdir}/${pkgname}${pkgver/./}
 
+  # aarch64-pc-cygwin cross: name the programs with their .exe, as the build
+  # did; otherwise make relinks them without it (the cross gcc does not add
+  # the suffix), and zipinfo ends up without one.  The list of files to
+  # chmod also adds $E to the zipgrep script, so give it without that.
+  local _xargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs=(E=".exe"
+            'INSTALLEDBIN=$(BINDIR)/funzip$E $(BINDIR)/unzip$E $(BINDIR)/unzipsfx$E $(BINDIR)/zipgrep $(BINDIR)/zipinfo$E')
+  fi
+
   # install -- from Debian
-  make -f unix/Makefile prefix=${pkgdir}/usr LN="ln" MANDIR=${D}/usr/share/man/man1 INSTALL_PROGRAM="install" install
+  make -f unix/Makefile prefix=${pkgdir}/usr LN="ln" MANDIR=${D}/usr/share/man/man1 INSTALL_PROGRAM="install" "${_xargs[@]}" install
 
   # install the license file
   install -Dm644 LICENSE ${pkgdir}/usr/share/licenses/unzip/LICENSE
