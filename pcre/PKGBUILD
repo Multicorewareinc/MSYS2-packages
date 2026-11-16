@@ -3,9 +3,9 @@
 pkgbase=pcre
 pkgname=('pcre' 'libpcre' 'libpcre16' 'libpcre32' 'libpcrecpp' 'libpcreposix' 'pcre-devel')
 pkgver=8.45
-pkgrel=5
+pkgrel=6
 pkgdesc="A library that implements Perl 5-style regular expressions"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.pcre.org/"
 msys2_repository_url='https://github.com/PCRE2Project/pcre2'
 msys2_references=(
@@ -31,7 +31,15 @@ prepare() {
 build() {
   cd "${srcdir}"/${pkgname}-${pkgver}
 
-  ./configure \--build=${CHOST} \
+  # aarch64-pc-cygwin cross: --host selects the cross compiler; libbz2,
+  # zlib and readline come from the toolchain sysroot.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+  fi
+  ./configure "${_xargs[@]}" \
       --prefix=/usr \
       --enable-pcre16 \
       --enable-pcre32 \
