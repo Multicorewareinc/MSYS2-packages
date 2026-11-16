@@ -2,10 +2,10 @@
 
 pkgname=mintty
 pkgver=3.8.3
-pkgrel=1
+pkgrel=2
 epoch=1
 pkgdesc="Terminal emulator with native Windows look and feel"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:GPL-3.0-or-later')
 depends=('sh')
 makedepends=('gcc')
@@ -22,7 +22,22 @@ sha256sums=('01e31d569dc11c428bc663447ee4cd3dd7bd39406f7f1cdba3d66f1039b3b38a'
 
 build() {
   cd "${srcdir}/${pkgname}-${pkgver}"
-  make
+  # aarch64-pc-cygwin cross: src/Makefile derives the compiler and its
+  # platform from `uname`, i.e. from the x86_64 build host.  Name them
+  # instead; TARGET is also what `mintty --version` prints in brackets, so
+  # use the form a native build would produce (Msys-aarch64).
+  # The Makefile also adds -mtune=atom, an x86 CPU, for any gcc >= 5.
+  # The cross cc1 hangs whenever its garbage collector runs (config.c, at
+  # any -O level, once <fcntl.h> and <windows.h> are both included); raise
+  # the collection threshold so that it never runs for these small files.
+  local _xargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs=(TARGET=Msys-aarch64 platform=msysarm64
+            CC="aarch64-pc-cygwin-gcc --param ggc-min-heapsize=2000000 --param ggc-min-expand=1000"
+            RC=aarch64-pc-cygwin-windres)
+    sed -i -e 's/CFLAGS += -mtune=atom \$(SECUR)/CFLAGS += $(SECUR)/' src/Makefile
+  fi
+  make "${_xargs[@]}"
 }
 
 package() {
