@@ -6,9 +6,9 @@ _topver=9.2
 _patchlevel=1252
 _versiondir="${pkgname}${_topver//./}"
 pkgver="${_topver}.${_patchlevel}"
-pkgrel=2
+pkgrel=3
 pkgdesc='Vi Improved, a highly configurable, improved version of the vi text editor'
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url='https://www.vim.org'
 msys2_repository_url='https://github.com/vim/vim'
 msys2_references=(
@@ -90,22 +90,38 @@ prepare() {
 build() {
   cd "${pkgname}-${pkgver}"
 
+  # aarch64-pc-cygwin cross: --host selects the cross compiler and ncursesw
+  # comes from the toolchain sysroot.  The script interpreters stay off:
+  # configure would take their headers and flags from the x86_64 host's
+  # lua, perl, python and ruby, and none of them exists for aarch64 yet.
+  local _xargs=(--build="${CHOST}"
+                --enable-luainterp=dynamic
+                --enable-perlinterp=dynamic
+                --enable-python3interp=dynamic
+                --enable-rubyinterp=dynamic)
+  local _ncinc=/usr/include/ncursesw
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs=(--build="${CHOST}" --host=aarch64-pc-cygwin
+            --disable-luainterp --disable-perlinterp
+            --disable-python3interp --disable-rubyinterp)
+    _ncinc=/usr/aarch64-pc-cygwin/usr/include/ncursesw
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+    # src/xxd/Makefile links `-o xxd`; the native gcc adds .exe to that,
+    # the cross gcc does not, and installing xxd.exe then fails.
+    sed -i -e 's/^xxd: xxd\.c$/xxd.exe: xxd.c/' -e 's/-o xxd xxd\.c/-o xxd.exe xxd.c/' src/xxd/Makefile
+  fi
   ./configure \
     --prefix=/usr \
-    --build="${CHOST}" \
+    "${_xargs[@]}" \
     --with-features=huge \
     --with-tlib=ncursesw \
     --enable-cscope \
     --enable-multibyte \
-    --enable-luainterp=dynamic \
-    --enable-perlinterp=dynamic \
     --enable-pythoninterp=no \
-    --enable-python3interp=dynamic \
-    --enable-rubyinterp=dynamic \
     --disable-tclinterp \
     --disable-gpm --disable-sysmouse \
     --disable-gui --without-x \
-    CPPFLAGS="${CPPFLAGS} -I/usr/include/ncursesw" \
+    CPPFLAGS="${CPPFLAGS} -I${_ncinc}" \
     --with-compiledby="<https://www.msys2.org/>"
 
   #make auto/osdef.h
@@ -137,6 +153,15 @@ package() {
   do
     cp -f "${pkgdir}/usr/bin/vim.exe" "${pkgdir}/usr/bin/${y}"
   done
+  # aarch64-pc-cygwin cross: natively, copying vim.exe to "vimdiff" (and
+  # make install's ex link) gives vimdiff.exe etc.; on the x86_64 build host
+  # the copies keep the bare name.  Name them as in the x86_64 package.
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    for y in ex vimdiff view rview rvim
+    do
+      mv -f "${pkgdir}/usr/bin/${y}" "${pkgdir}/usr/bin/${y}.exe"
+    done
+  fi
 
   mkdir -p "${pkgdir}/usr/share/bash-completion/completions"
   cp -f "${srcdir}/vim-completion" "${pkgdir}/usr/share/bash-completion/completions/vim"
