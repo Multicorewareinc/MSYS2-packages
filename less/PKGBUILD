@@ -2,10 +2,10 @@
 
 pkgname=less
 pkgver=710
-pkgrel=1
+pkgrel=2
 pkgdesc="A terminal based program for viewing text files"
 license=('spdx:GPL-3.0-or-later')
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="http://www.greenwoodsoftware.com/less"
 msys2_repository_url="https://github.com/gwsw/less"
 msys2_references=(
@@ -25,10 +25,18 @@ prepare() {
 
 build() {
   cd ${srcdir}/${pkgname}-${pkgver}
+  # aarch64-pc-cygwin cross: --host selects the cross compiler; the
+  # libraries it links come from the toolchain sysroot.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+    CPPFLAGS+=" -I/usr/aarch64-pc-cygwin/usr/include"
+    LDFLAGS+=" -L/usr/aarch64-pc-cygwin/usr/lib"
+  fi
   make -f Makefile.aut distfiles
 
   ./configure \
-      --build=${CHOST} \
+      "${_xargs[@]}" \
       --prefix=/usr \
       --sysconfdir=/etc \
       --with-regex=pcre2
