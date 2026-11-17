@@ -2,12 +2,12 @@
 
 pkgname=gnupg
 pkgver=2.4.9
-pkgrel=3
+pkgrel=4
 pkgdesc='Complete and free implementation of the OpenPGP standard'
 provides=('dirmngr' "gnupg2=${pkgver}")
 url='https://gnupg.org/'
 license=('spdx:GPL-3.0-or-later')
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 msys2_changelog_url='https://git.gnupg.org/cgi-bin/gitweb.cgi?p=gnupg.git;a=blob;f=NEWS;hb=HEAD'
 msys2_documentation_url='https://www.gnupg.org/documentation'
 msys2_repository_url='https://git.gnupg.org/cgi-bin/gitweb.cgi?p=gnupg.git'
@@ -187,10 +187,19 @@ prepare() {
 }
 
 build() {
+  # aarch64-pc-cygwin cross: --host selects the cross compiler, and
+  # pkg-config has to read the sysroot's gnutls.pc; with the build host's
+  # .pc files configure finds no GnuTLS and silently skips dirmngr.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+    export PKG_CONFIG_LIBDIR=/usr/aarch64-pc-cygwin/usr/lib/pkgconfig
+    export PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-pc-cygwin
+  fi
   cd "${srcdir}/${pkgname}-${pkgver}"
 
   ./configure \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --prefix=/usr \
     --sysconfdir=/etc \
     --localstatedir=/var \
