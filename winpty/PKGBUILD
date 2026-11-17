@@ -6,14 +6,16 @@
 _realname=winpty
 pkgname="${_realname}"
 pkgver=0.4.3
-pkgrel=3
+pkgrel=4
 pkgdesc="A Windows software package providing an interface similar to a Unix pty-master for communicating with Windows console programs"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://github.com/rprichard/winpty"
 license=('spdx:MIT')
 makedepends=(tar 'autotools' xz gcc)
 if [[ "${CARCH}" == 'i686' ]]; then
   makedepends+=('mingw-w64-cross-mingw32-gcc')
+elif [[ "${CARCH}" == 'aarch64' ]]; then
+  makedepends+=('mingw-w64-cross-mingwarm64-gcc')
 else
   makedepends+=('mingw-w64-cross-mingw64-gcc')
 fi
@@ -53,8 +55,26 @@ prepare() {
 
 build() {
   cd "${srcdir}/${_realname}-${pkgver}"
-  ./configure --build=${CHOST} \
-    --prefix=/usr
+  # aarch64-pc-cygwin cross: configure picks both compilers from `uname -m`,
+  # i.e. the x86_64 build host's, and requires them to be installed; it has
+  # no option to name others.  Write the config.mk it would write on an
+  # aarch64 MSYS2 instead: winpty.exe (the MSYS side) and
+  # winpty-agent.exe/winpty.dll (the native side) with the aarch64 compilers.
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    cat > config.mk <<'EOF'
+UNIX_CXX=aarch64-pc-cygwin-g++
+UNIX_LDFLAGS_STATIC=-static -static-libgcc -static-libstdc++
+MINGW_CXX=aarch64-w64-mingw32-g++
+COMMIT_HASH := none
+COMMIT_HASH_DEP := config.mk
+EOF
+    # `make install` strips with `install -s`, i.e. the host strip, which
+    # does not know aarch64 PE files.
+    sed -i 's/ -p -s / -p -s --strip-program=aarch64-pc-cygwin-strip /' Makefile
+  else
+    ./configure --build=${CHOST} \
+      --prefix=/usr
+  fi
 
   make UNIX_ADAPTER_EXE=winpty.exe
 }
