@@ -2,9 +2,9 @@
 
 pkgname=('nettle' 'libnettle' 'libhogweed' 'libnettle-devel')
 pkgver=4.0
-pkgrel=1
+pkgrel=2
 pkgdesc="A low-level cryptographic library"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.lysator.liu.se/~nisse/nettle/"
 msys2_repository_url="https://git.lysator.liu.se/nettle/nettle"
 msys2_references=(
@@ -29,12 +29,17 @@ prepare() {
 }
 
 build() {
+  # aarch64-pc-cygwin cross: --host selects the cross compiler.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+  fi
   cd "${srcdir}/${pkgname}-${pkgver}"
 
   ./configure \
     --prefix=/usr \
     --libdir=/usr/lib \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --enable-shared \
     --enable-static \
     --disable-assembler
