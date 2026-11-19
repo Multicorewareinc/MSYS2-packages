@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: aswin-mcw <aswin.kalies@multicorewareinc.com>
+Date: Thu, 19 Nov 2026 22:00:00 +0530
+Subject: [PATCH 13/13] bfd: aarch64 PE: resolve weak externals before applying
+ relocations
+
+GCC emits a PE weak external (C_NT_WEAK, with an aux record naming the
+default definition, ".weak.<name>.<other>") for a function declared
+__attribute__((weak)).  bfd keeps such a symbol undefined (undefweak) in
+the hash table, so coff_pe_aarch64_relocate_section found no definition,
+skipped the relocation and left it to _bfd_coff_generic_relocate_section.
+That one does resolve the weak external, but cannot apply the AArch64
+relocations: it prints "26 bit relocation not currently supported." and
+writes the default definition's offset in its section as the branch
+displacement.  The call lands in some other function.
+
+gnutls's library constructor calls its weak _gnutls_global_init_skip()
+that way and jumped into the middle of _gnutls_memory_mark_undefined();
+the unbalanced stack made every program linked with msys-gnutls-30.dll
+crash while the DLL was loading.  util-linux's libcommon has the same
+pattern (blkdev.c, timeutils.c, randutils.c).
+
+Resolve the weak external to its default definition, as the generic code
+does, before the AArch64 relocations are applied.
+
+Signed-off-by: aswin-mcw <aswin.kalies@multicorewareinc.com>
+---
+--- a/bfd/coff-aarch64.c
++++ b/bfd/coff-aarch64.c
+@@ -565,6 +565,27 @@
+ 	    }
+ 	  }
+ 
++      /* A PE weak external (C_NT_WEAK with an aux record, which is what
++	 GCC emits for __attribute__((weak)) definitions) stays undefined in
++	 the hash table; its default definition is the symbol the aux record
++	 names.  Resolve it here, as _bfd_coff_generic_relocate_section
++	 does: the generic code cannot apply the AArch64 relocations below
++	 and would, for instance, write the target's section offset into a
++	 BRANCH26 as the branch displacement.  */
++      if (h
++	  && (h->root.type == bfd_link_hash_undefweak
++	      || h->root.type == bfd_link_hash_undefined)
++	  && h->symbol_class == C_NT_WEAK && h->numaux == 1)
++	{
++	  struct coff_link_hash_entry *h2 = NULL;
++	  unsigned long symndx2 = h->aux->x_sym.x_tagndx.u32;
++
++	  if (symndx2 < obj_raw_syment_count (h->auxbfd))
++	    h2 = obj_coff_sym_hashes (h->auxbfd)[symndx2];
++	  if (h2 && h2->root.type == bfd_link_hash_defined)
++	    h = h2;
++	}
++
+       if (h && h->root.type == bfd_link_hash_defined)
+ 	{
+ 	  sec = h->root.u.def.section;
+-- 
+2.47.0
+
