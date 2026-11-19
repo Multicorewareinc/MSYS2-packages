@@ -3,7 +3,7 @@
 pkgname=("util-linux" "libutil-linux" "libutil-linux-devel")
 _pkgmajor=2.40
 pkgver=${_pkgmajor}.2
-pkgrel=3
+pkgrel=4
 pkgdesc="Miscellaneous system utilities for Linux"
 arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:GPL-2.0-or-later')
@@ -94,6 +94,11 @@ build() {
   local _xargs=(--build=${CHOST})
   if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
     _xargs+=(--host=aarch64-pc-cygwin)
+    # The bundled libtool only recognises x86 import libraries
+    # ("file format pe-x86-64"), so it drops the full path to
+    # libintl.dll.a that gettext's macros hand it as a "static archive",
+    # and libblkid.la fails to link with undefined libintl_gettext.
+    _xargs+=(lt_cv_deplibs_check_method=pass_all)
   fi
 
   local -a extra_config
