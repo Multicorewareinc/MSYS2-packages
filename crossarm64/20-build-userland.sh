@@ -53,6 +53,17 @@ prepare_cfgroot() {
   mkdir -p "$SYSROOT"/tmp "$SYSROOT"/etc
   [[ -f $SYSROOT/etc/fstab ]] ||
     printf 'none / cygdrive binary,posix=0,noacl,user 0 0\n' > "$SYSROOT"/etc/fstab
+  # Programs the build runs on the ARM64 runtime (perl's miniperl reading
+  # the header paths the cross preprocessor prints, "make install" with a
+  # DESTDIR under /home) are handed the build shell's absolute paths; mount
+  # the sysroot and /home at the same paths, so both runtimes resolve them
+  # to the same files.
+  local m w
+  for m in /usr/aarch64-pc-cygwin /home; do
+    w=$(cygpath -m "$m")
+    grep -q "^[^#]* $m ntfs " "$SYSROOT"/etc/fstab ||
+      printf '%s %s ntfs binary,posix=0,noacl 0 0\n' "$w" "$m" >> "$SYSROOT"/etc/fstab
+  done
   if [[ -f $SYSROOT/usr/bin/bash.exe ]]; then
     cp -f "$SYSROOT"/usr/bin/bash.exe "$SYSROOT"/usr/bin/sh.exe
   fi
@@ -61,6 +72,15 @@ prepare_cfgroot() {
 for d in "${ORDER[@]}"; do
   echo "=== $(date +%T) building $d"
   cd "$REPO/$d" || exit 1
+  # MSYS2's makepkg only checks arch=() in its opt-in lint, so a recipe
+  # without an aarch64 arm would be built for the build machine's triplet
+  # with the cross compiler and still be named -aarch64 (#55).
+  # (Capture first: under pipefail, grep -q exiting early would SIGPIPE
+  # makepkg and fail the pipeline even on a match.)
+  srcinfo=$(makepkg --config "$CONF" --printsrcinfo 2>/dev/null)
+  if ! grep -qE '^[[:space:]]*arch = (aarch64|any)$' <<<"$srcinfo"; then
+    echo "FAILED: $d has no aarch64 (or any) in arch=()"; exit 1
+  fi
   prepare_cfgroot
   # makepkg (or a tool under it) sometimes just stops, with no error and
   # often with status 0; not understood yet.  Try such a build once more,
@@ -75,6 +95,14 @@ for d in "${ORDER[@]}"; do
     echo "::warning::$d: makepkg stopped without finishing (status $rc, log: $LOGS/$d.try1.log); trying again"
     tail -5 "$LOGS/$d.try1.log"
   done
+  # ld leaves relocations it cannot apply to bfd's generic code, which
+  # warns and writes a wrong value (a call to a weak function used to land
+  # in another function this way).  The link still succeeds: fail here.
+  if grep -q 'relocation not currently supported' "$LOGS/$d.log"; then
+    echo "FAILED: $d: ld could not apply some relocations (log: $LOGS/$d.log)"
+    grep 'relocation not currently supported' "$LOGS/$d.log" | sort | uniq -c | head
+    exit 1
+  fi
   # every autoconf configure should have run natively, with nothing guessed
   logs=$(find "$REPO/$d/src" -name config.log 2>/dev/null)
   if [[ -n $logs ]]; then
@@ -88,6 +116,17 @@ for d in "${ORDER[@]}"; do
       --exclude '.MTREE' --exclude '.INSTALL' --exclude '.CHANGELOG' ||
       { echo "STAGE FAILED: $p"; exit 1; }
     echo "  staged $(basename "$p")"
+    # A DLL or program must use its own startup code: one that imports
+    # _msys_dll_entry & co. from another DLL registers that DLL's data with
+    # the runtime and loses its own across fork() (#57).
+    for f in $(bsdtar -tf "$p" | grep -iE '\.(dll|exe)$'); do
+      borrowed=$(aarch64-pc-cygwin-objdump -p "$SYSROOT/$f" 2>/dev/null |
+        sed -n '/^The Import Tables/,/^The Export Tables/p' |
+        awk '/DLL Name/ {d = $3}
+             $NF ~ /^(_msys_dll_entry|_msys_crt0_common|msys_attach_dll|DllMain|_cygwin_dll_entry)$/ {print d ":" $NF}')
+      [[ -z $borrowed ]] ||
+        { echo "FAILED: $f imports runtime startup symbols: $borrowed (#57)"; exit 1; }
+    done
   done
 done
 echo "=== $(date +%T) userland done"
