@@ -4,9 +4,9 @@ _perlname='TermReadKey'
 _realname="${_perlname,,}"
 pkgname=perl-${_realname}
 pkgver=2.38
-pkgrel=9
+pkgrel=10
 pkgdesc="Provides simple control over terminal driver modes"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:LicenseRef-TermReadKey')
 depends=('perl')
 makedepends=('make' 'gcc' 'perl-devel')
@@ -24,8 +24,21 @@ msys2_references=(
 )
 
 build() {
+  # aarch64-pc-cygwin cross: Makefile.PL runs under the target's perl (it
+  # runs natively on the ARM64 build machine), so MakeMaker takes the
+  # target's %Config; the cross compiler builds against the sysroot's
+  # perl headers and DLL.
+  local _perl=perl _mmargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    local _s=/usr/aarch64-pc-cygwin
+    _perl=${_s}/usr/bin/perl.exe
+    _mmargs=(CC=aarch64-pc-cygwin-gcc LD=aarch64-pc-cygwin-gcc
+             PERL_INC=${_s}/usr/lib/perl5/core_perl/CORE
+             PERL_ARCHLIB=${_s}/usr/lib/perl5/core_perl
+             PERL=${_perl} FULLPERL=${_perl})
+  fi
   cd "${srcdir}/${_perlname}-${pkgver}"
-  perl Makefile.PL INSTALLDIRS=vendor
+  ${_perl} Makefile.PL INSTALLDIRS=vendor "${_mmargs[@]}"
   make
 }
 
@@ -35,8 +48,14 @@ check() {
 }
 
 package() {
+  # (the cross arm's install runs on the ARM64 runtime: hand it a path both
+  # runtimes resolve)
+  local _dest=${pkgdir}
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _dest=$(cygpath -m "${_dest}")
+  fi
   cd "${srcdir}/${_perlname}-${pkgver}"
-  make DESTDIR="${pkgdir}" install
+  make DESTDIR="${_dest}" install
 
   install -d "${pkgdir}/usr/share/licenses/${pkgname}/"
   head -7 README > "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
