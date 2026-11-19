@@ -4,7 +4,7 @@ _realname=gcc
 _target=aarch64-pc-cygwin
 pkgname="cross-msysarm64-${_realname}"
 pkgver=17.0.0
-pkgrel=3
+pkgrel=4
 pkgdesc="Cross GCC stage2 for aarch64-pc-cygwin (with full runtime)"
 arch=('i686' 'x86_64')
 url="https://gcc.gnu.org"
@@ -20,7 +20,7 @@ makedepends=(
   "autotools"
   "gperf"
   "libzstd-devel"
-  "cross-msysarm64-binutils"
+  "cross-msysarm64-binutils>=2.47.50-4"  # its ld keeps _msys_dll_entry out of the runtime DLLs' exports (#57)
   "cross-msysarm64-gcc-stage1"      # stage1 compiler
   "cross-msysarm64-runtime-stage1"  # prepare() stages its libmsys-2.0.a, newlib
                                     # libc.a/libm.a and real crt0.o from
