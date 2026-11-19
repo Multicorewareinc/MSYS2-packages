@@ -5,7 +5,7 @@ _target=aarch64-pc-cygwin
 _host=x86_64-pc-msys
 pkgname="cross-msysarm64-${_realname}"
 pkgver=2.47.50
-pkgrel=3
+pkgrel=4
 pkgdesc="Cross binutils for target ${_target}"
 arch=('i686' 'x86_64')
 url="https://www.gnu.org/software/binutils/"
@@ -30,10 +30,12 @@ source=("${_realname}"::"git+https://sourceware.org/git/binutils-gdb.git#commit=
         woarm64-0009-bfd-restore-the-section_htab-guards-removed-by-b3dcd.patch
         woarm64-0010-ld-Don-t-emit-a-reference-to-_pei386_runtime_relocat.patch
         woarm64-0011-ld-pe-dll-filter-runtime-symbols-from-AArch64-export.patch
+        woarm64-0012-ld-pe-dll-filter-the-MSYS-runtime-from-AArch64-expor.patch
         0002-check-for-unusual-file-harder.patch
         0010-bfd-Increase-_bfd_coff_max_nscns-to-65279.patch
         9999-workarounds.patch)
 sha256sums=('SKIP'
+            'SKIP'
             'SKIP'
             'SKIP'
             'SKIP'

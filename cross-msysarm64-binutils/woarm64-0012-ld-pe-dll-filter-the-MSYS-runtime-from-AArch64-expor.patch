@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: aswin-mcw <aswin.kalies@multicorewareinc.com>
+Date: Wed, 18 Nov 2026 16:00:00 +0530
+Subject: [PATCH 12/12] ld: pe-dll: filter the MSYS runtime from AArch64
+ --export-all-symbols
+
+On aarch64-pc-cygwin the DLL startup code comes from libmsys-2.0.a
+(dll_entry.o: _msys_dll_entry, _msys_crt0_common, msys_attach_dll, ...),
+but the export filters only know the Cygwin names and libcygwin.  Every DLL
+linked with automatic exports therefore exported _msys_dll_entry, and a DLL
+linked later against its import library resolved its own entry point
+(-e _msys_dll_entry) to that import: its entry was the other DLL's startup
+code, which registers the other DLL's data and bss ranges with the runtime.
+fork() then never copies the borrowing DLL's data to the child; perl, for
+one, whose interpreter DLL got its entry from msys-crypt-2.dll, crashed in
+every forked child.
+
+Add the MSYS names and libmsys-2.0, as MSYS2's native binutils does
+(0100-binutils-2.37-msys2.patch).  The x86_64 DLLs export none of these
+symbols; with this the aarch64 ones match them.
+
+Signed-off-by: aswin-mcw <aswin.kalies@multicorewareinc.com>
+---
+ ld/pe-dll.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/ld/pe-dll.c b/ld/pe-dll.c
+--- a/ld/pe-dll.c
++++ b/ld/pe-dll.c
+@@ -218,6 +218,7 @@
+   { STRING_COMMA_LEN ("_NULL_IMPORT_DESCRIPTOR") },
+   /* Entry point symbols, and entry hooks.  */
+   { STRING_COMMA_LEN ("cygwin_crt0") },
++  { STRING_COMMA_LEN ("msys_crt0") },
+ #ifdef pe_use_plus
+   { STRING_COMMA_LEN ("DllMain") },
+   { STRING_COMMA_LEN ("DllEntryPoint") },
+@@ -225,6 +226,10 @@
+   { STRING_COMMA_LEN ("_cygwin_dll_entry") },
+   { STRING_COMMA_LEN ("_cygwin_crt0_common") },
+   { STRING_COMMA_LEN ("_cygwin_noncygwin_dll_entry") },
++  { STRING_COMMA_LEN ("_msys_dll_entry") },
++  { STRING_COMMA_LEN ("_msys_crt0_common") },
++  { STRING_COMMA_LEN ("_msys_nonmsys_dll_entry") },
++  { STRING_COMMA_LEN ("msys_attach_dll") },
+ #else
+   { STRING_COMMA_LEN ("DllMain@12") },
+   { STRING_COMMA_LEN ("DllEntryPoint@0") },
+@@ -233,6 +238,10 @@
+   { STRING_COMMA_LEN ("_cygwin_crt0_common@8") },
+   { STRING_COMMA_LEN ("_cygwin_noncygwin_dll_entry@12") },
+   { STRING_COMMA_LEN ("cygwin_attach_dll") },
++  { STRING_COMMA_LEN ("_msys_dll_entry@12") },
++  { STRING_COMMA_LEN ("_msys_crt0_common@8") },
++  { STRING_COMMA_LEN ("_msys_nonmsys_dll_entry@12") },
++  { STRING_COMMA_LEN ("msys_attach_dll") },
+ #endif
+   { STRING_COMMA_LEN ("cygwin_premain0") },
+   { STRING_COMMA_LEN ("cygwin_premain1") },
+@@ -401,6 +410,7 @@
+ {
+   { STRING_COMMA_LEN ("libcegcc") },
+   { STRING_COMMA_LEN ("libcygwin") },
++  { STRING_COMMA_LEN ("libmsys-2.0") },
+   { STRING_COMMA_LEN ("libgcc") },
+   { STRING_COMMA_LEN ("libgcc_s") },
+   { STRING_COMMA_LEN ("libstdc++") },
+-- 
+2.51.0.windows.1
+
