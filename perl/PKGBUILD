@@ -3,9 +3,9 @@
 pkgbase=perl
 pkgname=('perl' 'perl-doc' 'perl-devel')
 pkgver=5.42.3
-pkgrel=3
+pkgrel=4
 pkgdesc="A highly capable, feature-rich programming language"
-arch=(i686 x86_64)
+arch=(i686 x86_64 aarch64)
 license=('spdx:Artistic-1.0-Perl OR GPL-1.0-or-later')
 url="https://www.perl.org/"
 msys2_repository_url='https://github.com/Perl/perl5'
@@ -74,12 +74,72 @@ _EOF
   # test broken with gdbm 1.15. See: https://rt.perl.org/Public/Bug/Display.html?id=133295
   sed -i 's|BEGIN {|BEGIN { plan(skip_all => "fatal test unsupported with gdbm 1.15");|' ext/GDBM_File/t/fatal.t
 
+  # Makefile.SH gives the perl DLL a fixed image base: a high one for
+  # x86_64-cygwin and 0x60500000, meant for 32-bit Cygwin, for anything else.
+  # Windows on ARM64 refuses to load a 64-bit DLL based below 4 GB
+  # (STATUS_INVALID_IMAGE_FORMAT, "not a valid Win32 application"), so give
+  # aarch64-cygwin the x86_64 base as well.  Needed for native aarch64
+  # builds too.
+  sed -i 's|"x86_64-cygwin") shrpldflags=|"x86_64-cygwin"\|"aarch64-cygwin") shrpldflags=|' Makefile.SH
+  grep -q '"x86_64-cygwin"|"aarch64-cygwin") shrpldflags=' Makefile.SH
+
+  # aarch64-pc-cygwin cross: the build machine is Windows on ARM64 itself, so
+  # Configure's test programs and the miniperl/perl it builds run directly,
+  # and Configure is run as for a native build with the cross tools named
+  # (see build()).  The Cygwin hints assume the build machine's runtime: they
+  # reset PATH to .:/usr/bin/, dropping the sysroot's usr/bin, where the
+  # programs find the ARM64 msys-2.0.dll; and they name the build machine's
+  # libmsys-2.0.a.
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    sed -i -e "s|^PATH='.:/usr/bin/'|PATH='.:/usr/bin/:/usr/aarch64-pc-cygwin/usr/bin'|" \
+           -e "s|^libc='/usr/lib/libmsys-2.0.a'|libc='/usr/aarch64-pc-cygwin/lib/libmsys-2.0.a'|" \
+           hints/cygwin.sh
+    grep -q "^PATH='.:/usr/bin/:/usr/aarch64-pc-cygwin/usr/bin'" hints/cygwin.sh
+    grep -q "^libc='/usr/aarch64-pc-cygwin/lib/libmsys-2.0.a'" hints/cygwin.sh
+    # Win32's Makefile.PL names the w32api import libraries' directory, and
+    # MakeMaker drops any library it does not find there (-lole32, -lversion,
+    # -lwinhttp: Win32.dll then fails to link).  In the toolchain sysroot
+    # they are in /usr/aarch64-pc-cygwin/lib/w32api.
+    sed -i 's|-L/usr/lib/w32api |-L/usr/aarch64-pc-cygwin/lib/w32api |' cpan/Win32/Makefile.PL
+    grep -q -- '-L/usr/aarch64-pc-cygwin/lib/w32api ' cpan/Win32/Makefile.PL
+  fi
 }
 
 build() {
   cd ${srcdir}/${pkgname}-${pkgver}
 
   CFLAGS+=" -Wno-int-conversion"
+
+  # aarch64-pc-cygwin cross: name the cross compiler and binutils (the hints
+  # default to gcc/g++, and Configure finds the build machine's ar and nm).
+  # The cross GCC does not add .exe to an output name without one (native
+  # Cygwin GCC does; issue #37), and Configure and the extensions' probes
+  # (Time::HiRes, ...) compile test programs with -o NAME and then look for
+  # or run NAME.exe: the signal names come out empty and the probes fail.
+  # Compile through a wrapper that adds the suffix as native GCC would.
+  local _tools=(-Dcc=gcc -Dld=g++)
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    mkdir -p "${srcdir}/xbin"
+    cat > "${srcdir}/xbin/aarch64-pc-cygwin-gcc-exe" <<'EOF'
+#!/bin/bash
+args=("$@") link=1
+for a in "${args[@]}"; do
+  case $a in -c|-S|-E|-M|-MM|-shared|--shared) link=0 ;; esac
+done
+if (( link )); then
+  for ((i = 0; i < ${#args[@]} - 1; i++)); do
+    if [[ ${args[i]} == -o && ${args[i+1]##*/} != *.* ]]; then
+      args[i+1]=${args[i+1]}.exe
+    fi
+  done
+fi
+exec aarch64-pc-cygwin-gcc "${args[@]}"
+EOF
+    chmod +x "${srcdir}/xbin/aarch64-pc-cygwin-gcc-exe"
+    _tools=(-Dcc="${srcdir}/xbin/aarch64-pc-cygwin-gcc-exe" -Dld=aarch64-pc-cygwin-g++
+            -Dar=aarch64-pc-cygwin-ar -Dfull_ar=/usr/bin/aarch64-pc-cygwin-ar
+            -Dranlib=aarch64-pc-cygwin-ranlib -Dnm=aarch64-pc-cygwin-nm)
+  fi
 
   export MSYSTEM=CYGWIN
   ./Configure -des -Dusethreads \
@@ -100,13 +160,37 @@ build() {
     -Darchname=${ARCH}-cygwin-threads \
     -Dmyarchname=${ARCH}-cygwin \
     -Dlibperl=msys-perl"$(echo "${pkgver%.[0-9]*}" | tr . _)".dll \
-    -Dcc=gcc -Dld=g++ \
+    "${_tools[@]}" \
     -Accflags="$CFLAGS -fwrapv" \
     -Ud_setproctitle
 
+  # aarch64-pc-cygwin cross: Configure takes the architecture name and OS
+  # version from the build shell's uname (x86_64), and discards a -D archname
+  # that disagrees with it.  Set them in config.sh as the ARM64 runtime
+  # reports them (aarch64-cygwin-thread-multi, as x86_64-cygwin-thread-multi
+  # in the x86_64 package) and let Configure -S regenerate config.h and the
+  # other files from it.
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    local _osvers
+    _osvers=$(/usr/aarch64-pc-cygwin/usr/bin/uname.exe -r | tr -d '\r')
+    [[ -n ${_osvers} ]]
+    sed -i -e "s/^archname=.*/archname='aarch64-cygwin-thread-multi'/" \
+           -e "s/^myarchname=.*/myarchname='aarch64-cygwin'/" \
+           -e "s/^osvers=.*/osvers='${_osvers}'/" config.sh
+    ./Configure -S
+    grep -q 'ARCHNAME "aarch64-cygwin-thread-multi"' config.h
+  fi
+
   LC_ALL=C make
 
-  _package "${srcdir}/_install"
+  # aarch64-pc-cygwin cross: "make install" runs the new ARM64 perl, whose
+  # root is the sysroot, so it would put a /home/... DESTDIR there; give it
+  # a Windows path, which both runtimes resolve alike.
+  local _dest="${srcdir}/_install"
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _dest=$(cygpath -m "${_dest}")
+  fi
+  _package "${_dest}"
 }
 
 check() {
@@ -182,6 +266,35 @@ _package() {
                   ${pkgdir}/usr/lib/perl5/core_perl/auto/XS/Typemap/Typemap.dll
   install -D -m755 ${srcdir}/${pkgname}-${pkgver}/lib/auto/Win32CORE/Win32CORE.a \
                   ${pkgdir}/usr/lib/perl5/core_perl/auto/Win32CORE/Win32CORE.a
+
+  # aarch64-pc-cygwin cross: %Config and CORE/config.h record the tools and
+  # paths of this build (the cross compiler wrapper, aarch64-pc-cygwin-ar,
+  # the toolchain sysroot), and MakeMaker builds every XS module with them.
+  # On the ARM64 system the compiler is gcc and the libraries and headers are
+  # in /usr/lib and /usr/include, so record what a native build records (as
+  # in the x86_64 package).
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    local _f _cfg=(Config.pm Config_heavy.pl CORE/config.h)
+    for _f in "${_cfg[@]}"; do
+      sed -i -e "s|${srcdir}/xbin/aarch64-pc-cygwin-gcc-exe|gcc|g" \
+             -e 's|/usr/bin/aarch64-pc-cygwin-ar|/usr/bin/ar|g' \
+             -e 's|aarch64-pc-cygwin-g++|g++|g' \
+             -e 's/aarch64-pc-cygwin-\(ar\|nm\|ranlib\)\b/\1/g' \
+             -e "s|:/usr/aarch64-pc-cygwin/usr/bin'|'|" \
+             -e 's|/usr/aarch64-pc-cygwin/include /usr/aarch64-pc-cygwin/usr/include|/usr/include|g' \
+             -e 's|/usr/aarch64-pc-cygwin/lib /usr/aarch64-pc-cygwin/usr/lib|/usr/lib|g' \
+             -e 's|/usr/aarch64-pc-cygwin/usr/|/usr/|g' \
+             -e 's|/usr/aarch64-pc-cygwin/lib/|/usr/lib/|g' \
+             -e 's|/usr/aarch64-pc-cygwin/include/|/usr/include/|g' \
+             "${pkgdir}/usr/lib/perl5/core_perl/${_f}"
+    done
+    sed -i "s/^ranlib='ranlib'$/ranlib=':'/" "${pkgdir}/usr/lib/perl5/core_perl/Config_heavy.pl"
+    if grep -nE 'xbin|aarch64-pc-cygwin-|/usr/aarch64-pc-cygwin' \
+         "${_cfg[@]/#/${pkgdir}/usr/lib/perl5/core_perl/}"; then
+      error "cross-build values left in %Config (above)"
+      return 1
+    fi
+  fi
 }
 
 _find_doc_files() {
