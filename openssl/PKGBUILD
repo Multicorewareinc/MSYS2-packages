@@ -4,7 +4,7 @@ pkgname=('openssl' 'libopenssl' 'openssl-devel' 'openssl-docs')
 # Note: always rebuild openssh after updating openssl pkgver,
 # it does strict version checks at runtime
 pkgver=3.6.5
-pkgrel=2
+pkgrel=3
 pkgdesc='The Open Source toolkit for Secure Sockets Layer and Transport Layer Security'
 arch=('i686' 'x86_64' 'aarch64')
 url='https://openssl-library.org'
@@ -23,13 +23,15 @@ source=("https://github.com/openssl/openssl/releases/download/${pkgname}-${pkgve
         '0001-Use-usr-ssl-as-ca-dir-instead-of-.-demoCA.patch'
         '0002-Support-MSYS2.patch'
         '0004-Override-engines-directory.patch'
-        '0005-Add-Cygwin-aarch64-target.patch')
+        '0005-Add-Cygwin-aarch64-target.patch'
+        '0006-armcap-aarch64-Cygwin-ask-Windows-for-the-CPU-features.patch')
 sha256sums=('a2157c2830efdec3788939b00c9b0638306d3f0bbb76dc4832ee503bb397df98'
             'SKIP'
             '7ff3213d8d085238695f076d254f16d15b16a9baca1f9393c1bed0057006da2c'
             'b73a45cf26830bbb3c110a8f9e042ea5c71a9627204d5d172b04c43aff5b0f1a'
             '345350546bf55dd069133e0c56b2c5f7e037db237a30f7ad38159bd61b6d4daf'
-            'd85c9a7e489c131f644ad40f310eeddff0bc195bed72954298b1d3a61607faee')
+            'd85c9a7e489c131f644ad40f310eeddff0bc195bed72954298b1d3a61607faee'
+            '8c4de11266b623fa70796ba27f549b0c261bdc5542cecae65eb65ac499bde770')
 # https://openssl-library.org/source/index.html
 validpgpkeys=(
   'B146647E45A7B33947AB226B2A2C87D161692D40' # openssl@openssl.org
@@ -43,6 +45,7 @@ prepare() {
   patch -p1 -i ${srcdir}/0002-Support-MSYS2.patch
   patch -p1 -i ${srcdir}/0004-Override-engines-directory.patch
   patch -p1 -i ${srcdir}/0005-Add-Cygwin-aarch64-target.patch
+  patch -p1 -i ${srcdir}/0006-armcap-aarch64-Cygwin-ask-Windows-for-the-CPU-features.patch
 }
 
 build() {

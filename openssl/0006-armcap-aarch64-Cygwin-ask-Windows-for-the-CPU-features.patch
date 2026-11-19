@@ -1,0 +1,48 @@
+From: aswin-mcw <aswin.kalies@multicorewareinc.com>
+Subject: [PATCH] armcap: aarch64 Cygwin: ask Windows for the CPU features
+
+On aarch64 Cygwin OPENSSL_cpuid_setup() took the generic path, which
+probes instructions under a SIGILL handler from a library constructor.
+That works when libcrypto is linked at startup, but Cygwin cannot deliver
+a signal raised while a DLL is being loaded by dlopen(): the process
+dies.  Perl's Net::SSLeay (and anything else that dlopen()s libcrypto)
+could not be loaded at all.
+
+Use the native Windows path instead, as the mingw targets do:
+IsProcessorFeaturePresent() needs no probing, and OPENSSL_cpuid_setup()
+is still called from OPENSSL_init_crypto().
+
+Signed-off-by: aswin-mcw <aswin.kalies@multicorewareinc.com>
+--- a/crypto/armcap.c
++++ b/crypto/armcap.c
+@@ -18,9 +18,19 @@
+ #include <signal.h>
+ #endif
+ #include "internal/cryptlib.h"
+-#ifdef _WIN32
++/*
++ * aarch64 Cygwin asks Windows for the CPU features, as native Windows does:
++ * the SIGILL probe below runs in the library constructor, and Cygwin cannot
++ * deliver a signal raised while a DLL is being loaded by dlopen() (perl's
++ * Net::SSLeay, for one, loads libcrypto that way); the process dies.
++ */
++#if defined(__CYGWIN__) && defined(__aarch64__)
++# define OSSL_ARMCAP_FROM_WINDOWS
++#endif
++#if defined(_WIN32) || defined(OSSL_ARMCAP_FROM_WINDOWS)
+ #include <windows.h>
+-#else
++#endif
++#ifndef _WIN32
+ #include <unistd.h>
+ #endif
+ #include "arm_arch.h"
+@@ -29,7 +39,7 @@
+ unsigned int OPENSSL_arm_midr = 0;
+ unsigned int OPENSSL_armv8_rsa_neonized = 0;
+ 
+-#ifdef _WIN32
++#if defined(_WIN32) || defined(OSSL_ARMCAP_FROM_WINDOWS)
+ void OPENSSL_cpuid_setup(void)
+ {
+     OPENSSL_armcap_P |= ARMV7_NEON;
