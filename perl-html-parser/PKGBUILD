@@ -4,9 +4,9 @@ _perlname='HTML-Parser'
 _realname="${_perlname,,}"
 pkgname=perl-${_realname}
 pkgver=3.86
-pkgrel=2
+pkgrel=3
 pkgdesc="Perl HTML parser class"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:Artistic-1.0-Perl' 'spdx:GPL-1.0-or-later')
 url="https://metacpan.org/dist/HTML-Parser"
 msys2_repository_url='https://github.com/libwww-perl/HTML-Parser'
@@ -26,8 +26,21 @@ source=(https://cpan.metacpan.org/authors/id/O/OA/OALDERS/${_perlname}-${pkgver}
 sha256sums=('5305e1d5faa70ee0aa282d85a5c9aa93911e8c7afa590ad1ced5703a544e20f6')
 
 build() {
+  # aarch64-pc-cygwin cross: Makefile.PL runs under the target's perl (it
+  # runs natively on the ARM64 build machine), so MakeMaker takes the
+  # target's %Config; the cross compiler builds against the sysroot's
+  # perl headers and DLL.
+  local _perl=perl _mmargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    local _s=/usr/aarch64-pc-cygwin
+    _perl=${_s}/usr/bin/perl.exe
+    _mmargs=(CC=aarch64-pc-cygwin-gcc LD=aarch64-pc-cygwin-gcc
+             PERL_INC=${_s}/usr/lib/perl5/core_perl/CORE
+             PERL_ARCHLIB=${_s}/usr/lib/perl5/core_perl
+             PERL=${_perl} FULLPERL=${_perl})
+  fi
   cd ${_perlname}-${pkgver}
-  perl Makefile.PL INSTALLDIRS=vendor
+  ${_perl} Makefile.PL INSTALLDIRS=vendor "${_mmargs[@]}"
   make
 }
 
@@ -37,6 +50,12 @@ check() {
 }
 
 package() {
+  # (the cross arm's install runs on the ARM64 runtime: hand it a path both
+  # runtimes resolve)
+  local _dest=${pkgdir}
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _dest=$(cygpath -m "${_dest}")
+  fi
   cd ${_perlname}-${pkgver}
-  make install DESTDIR="${pkgdir}"
+  make install DESTDIR="${_dest}"
 }
