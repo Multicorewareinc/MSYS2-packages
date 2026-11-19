@@ -4,9 +4,9 @@ _perlname='Clone'
 _realname="${_perlname,,}"
 pkgname=perl-${_realname}
 pkgver=0.51
-pkgrel=1
+pkgrel=2
 pkgdesc='Recursive copy of nested objects.'
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url='https://metacpan.org/dist/Clone'
 msys2_repository_url='https://github.com/garu/Clone'
 msys2_changelog_url='https://metacpan.org/dist/Clone/changes'
@@ -26,6 +26,19 @@ source=("https://cpan.metacpan.org/authors/id/A/AT/ATOOMIC/${_perlname}-${pkgver
 sha256sums=('f17f66fec97dacca67ac9585701d2d079cfc80539fe6e8160c201c4e55f67507')
 
 build() {
+  # aarch64-pc-cygwin cross: Makefile.PL runs under the target's perl (it
+  # runs natively on the ARM64 build machine), so MakeMaker takes the
+  # target's %Config; the cross compiler builds against the sysroot's
+  # perl headers and DLL.
+  local _perl=/usr/bin/perl _mmargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    local _s=/usr/aarch64-pc-cygwin
+    _perl=${_s}/usr/bin/perl.exe
+    _mmargs=(CC=aarch64-pc-cygwin-gcc LD=aarch64-pc-cygwin-gcc
+             PERL_INC=${_s}/usr/lib/perl5/core_perl/CORE
+             PERL_ARCHLIB=${_s}/usr/lib/perl5/core_perl
+             PERL=${_perl} FULLPERL=${_perl})
+  fi
   ( export PERL_MM_USE_DEFAULT=1 PERL5LIB=""                 \
       PERL_AUTOINSTALL=--skipdeps                            \
       PERL_MM_OPT="INSTALLDIRS=vendor"     \
@@ -33,14 +46,20 @@ build() {
       MODULEBUILDRC=/dev/null
 
     cd ${_perlname}-${pkgver}
-    /usr/bin/perl Makefile.PL
+    ${_perl} Makefile.PL "${_mmargs[@]}"
     make
   )
 }
 
 package() {
   cd ${_perlname}-${pkgver}
-  make DESTDIR="$pkgdir" install
+  # (the cross arm's install runs on the ARM64 runtime: hand it a path both
+  # runtimes resolve)
+  local _dest=${pkgdir}
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _dest=$(cygpath -m "${_dest}")
+  fi
+  make DESTDIR="${_dest}" install
   find "$pkgdir" -name '.packlist' -delete
   find "$pkgdir" -name '*.pod' -delete
 }
