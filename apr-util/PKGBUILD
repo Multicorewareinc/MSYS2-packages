@@ -51,6 +51,23 @@ build() {
   # (cross: apr's build helpers, libtool included, are in the sysroot)
   if [[ ${_p} != /usr ]]; then
     sed -i "s|/usr/share/apr/build-1|${_p}/share/apr/build-1|g" Makefile build/rules.mk
+    # apu-1-config, unlike apr-1-config, cannot tell that it runs from a
+    # sysroot, so serf and subversion got the host's -L/usr/lib (and ld
+    # then choked on the x86 libmsys-2.0.a).  Give it apr-1-config's
+    # check: run by a path that ends in $bindir but is not $bindir, it
+    # prefixes its directories with what comes before.  Installed and run
+    # as /usr/bin/apu-1-config it behaves as before.
+    sed -i '/^location=/a\
+case "$0" in\
+  "${bindir}/"*) ;;\
+  /*) _apu_root=${0%${bindir}/apu-1-config}\
+      if test "$_apu_root" != "$0"; then\
+        prefix=$_apu_root$prefix; exec_prefix=$_apu_root$exec_prefix\
+        bindir=$_apu_root$bindir; libdir=$_apu_root$libdir\
+        includedir=$_apu_root$includedir\
+      fi ;;\
+esac' apu-1-config
+    grep -q '_apu_root' apu-1-config || { error "apu-1-config: sysroot check not added"; return 1; }
   fi
 
   make -j1
