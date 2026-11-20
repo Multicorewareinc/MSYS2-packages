@@ -3,11 +3,11 @@
 pkgbase=libpsl
 pkgname=("${pkgbase}" "${pkgbase}-devel")
 pkgver=0.23.2
-pkgrel=2
+pkgrel=3
 pkgdesc='Public Suffix List library'
 url='https://github.com/rockdaboot/libpsl'
 msys2_repository_url='https://github.com/rockdaboot/libpsl'
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 license=('spdx:MIT')
 makedepends=('libxslt' 'python' 'libidn2-devel' 'publicsuffix-list' 'libunistring-devel' 'autotools' 'gcc' 'gettext-devel' 'gtk-doc')
 source=(https://github.com/rockdaboot/libpsl/releases/download/${pkgver}/${pkgname}-${pkgver}.tar.gz
@@ -51,7 +51,20 @@ build() {
   
   [[ -d "${srcdir}"/build-${CARCH} ]] && rm -rf "${srcdir}"/build-${CARCH}
   mkdir -p "${srcdir}"/build-${CARCH} && cd "${srcdir}"/build-${CARCH}
+  # aarch64-pc-cygwin cross: --host selects the cross compiler; libidn2
+  # and libunistring come from the sysroot (pkg-config pointed at it), the
+  # public suffix data and the build tools (python, xsltproc) from the host.
+  # libtool's file_magic check only knows x86 import libraries.
+  local _xargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    export PKG_CONFIG_LIBDIR=/usr/aarch64-pc-cygwin/usr/lib/pkgconfig
+    export PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-pc-cygwin
+    _xargs=(--build=${CHOST} --host=aarch64-pc-cygwin
+            lt_cv_deplibs_check_method=pass_all)
+  fi
+
   PYTHON=/usr/bin/python.exe ../${pkgname}-${pkgver}/configure \
+    "${_xargs[@]}" \
     --prefix=/usr \
     --disable-dependency-tracking \
     --enable-shared \
