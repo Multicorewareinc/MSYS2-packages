@@ -2,9 +2,9 @@
 
 pkgname=('apr' 'apr-devel')
 pkgver=1.7.6
-pkgrel=2
+pkgrel=3
 pkgdesc="The Apache Portable Runtime"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://apr.apache.org/"
 msys2_repository_url='https://github.com/apache/apr'
 msys2_references=(
@@ -37,9 +37,18 @@ prepare() {
 build() {
   cd "${srcdir}/apr-${pkgver}"
 
+  # aarch64-pc-cygwin cross: --host selects the cross compiler.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+    # libtool's file_magic check only knows x86 import libraries; this
+    # libtool is installed, and apr-util and subversion link with it.
+    _xargs+=(lt_cv_deplibs_check_method=pass_all)
+  fi
+
   export MSYSTEM=CYGWIN
   ./configure \
-      --build=${CHOST} \
+      "${_xargs[@]}" \
       --prefix=/usr \
       --libexecdir=/usr/lib/apr/modules \
       --datadir=/usr/share/apr \
