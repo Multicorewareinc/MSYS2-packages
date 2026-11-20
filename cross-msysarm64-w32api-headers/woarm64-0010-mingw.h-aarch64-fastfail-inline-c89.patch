@@ -1,0 +1,23 @@
+From: aswin-mcw <aswin.kalies@multicorewareinc.com>
+Subject: [PATCH] _mingw.h: spell the aarch64 __fastfail inline __inline__
+
+woarm64-0001 defines __MINGW_FASTFAIL_INLINE as "static inline" for
+aarch64.  "inline" is not a keyword in C89/C90, so every -std=c89 (or
+-ansi) translation unit that includes <windows.h> fails to compile
+("expected ';' before 'void'"); serf builds with -std=c89.  The GNU
+spelling works in every C mode, like the __MINGW_INTRIN_INLINE used on
+the other targets.
+
+Signed-off-by: aswin-mcw <aswin.kalies@multicorewareinc.com>
+---
+--- a/mingw-w64-headers/crt/_mingw.h.in
++++ b/mingw-w64-headers/crt/_mingw.h.in
+@@ -625,7 +625,7 @@
+ #if defined(__aarch64__)
+ /* Inline fails for aarch64 */
+ #define __MINGW_FASTFAIL_INLINE_DECL static
+-#define __MINGW_FASTFAIL_INLINE static inline
++#define __MINGW_FASTFAIL_INLINE static __inline__
+ #else
+ #define __MINGW_FASTFAIL_INLINE_DECL
+ #define __MINGW_FASTFAIL_INLINE __MINGW_INTRIN_INLINE

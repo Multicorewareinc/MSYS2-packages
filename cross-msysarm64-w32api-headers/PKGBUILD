@@ -1,7 +1,7 @@
 # Maintainer: Windows on ARM Experiments
 pkgname="cross-msysarm64-w32api-headers"
 pkgver=13.0.0
-pkgrel=9
+pkgrel=10
 pkgdesc="Win32 API headers for aarch64-pc-cygwin sysroot (WoA)"
 arch=('x86_64')
 url="https://www.mingw-w64.org/"
@@ -24,9 +24,11 @@ source=(
   woarm64-0007-Add-aarch64-pc-cygwin-target.patch
   woarm64-0008-Fix-relocations-in-dynamic-linking-9.patch
   woarm64-0009-basetsd-aarch64-64bit-pointers.patch
+  woarm64-0010-mingw.h-aarch64-fastfail-inline-c89.patch
 )
 
 sha256sums=('SKIP'
+            'SKIP'
             'SKIP'
             'SKIP'
             'SKIP'
@@ -46,7 +48,9 @@ prepare() {
   # 0001-0008 are the Windows-on-ARM-Experiments/mingw-woarm64 commits on top
   # of ${_upstream_commit}; 0009 is ours - it guards the 64-bit-pointer
   # INT_PTR/LONG_PTR/HANDLE_PTR typedefs on __aarch64__ as well as _WIN64,
-  # since the GNU aarch64-pc-cygwin toolchain does not predefine _WIN64.
+  # since the GNU aarch64-pc-cygwin toolchain does not predefine _WIN64;
+  # 0010 is ours too - 0001's aarch64 __fastfail is "static inline", which
+  # C89 code including <windows.h> cannot parse.
   local _p
   for _p in "${srcdir}"/woarm64-*.patch; do
     msg2 "Applying $(basename "${_p}")"
