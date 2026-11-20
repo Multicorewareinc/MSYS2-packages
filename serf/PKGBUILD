@@ -3,9 +3,9 @@
 pkgbase=serf
 pkgname=("lib${pkgbase}" "lib${pkgbase}-devel")
 pkgver=1.3.10
-pkgrel=2
+pkgrel=3
 pkgdesc="High-performance asynchronous HTTP client library"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://serf.apache.org/"
 msys2_references=(
   "anitya: 1720"
@@ -35,8 +35,24 @@ prepare() {
 
 build() {
   cd ${pkgbase}-${pkgver}
+
+  # aarch64-pc-cygwin cross: the cross compiler, and apr, apr-util,
+  # OpenSSL, zlib and heimdal's GSSAPI from the sysroot.  SCons has no
+  # AR/RANLIB variables and the host ar cannot index aarch64 objects, so
+  # hand it the cross ones through the environment.
+  local _xargs=(GSSAPI=/usr/bin/krb5-config)
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    local _s=/usr/aarch64-pc-cygwin/usr
+    _xargs=(CC=aarch64-pc-cygwin-gcc
+            APR=${_s}/bin/apr-1-config APU=${_s}/bin/apu-1-config
+            OPENSSL=${_s} ZLIB=${_s} GSSAPI=${_s}/bin/krb5-config)
+    export AR=aarch64-pc-cygwin-ar RANLIB=aarch64-pc-cygwin-ranlib
+    sed -i 's/^env = Environment(variables=opts,$/env = Environment(variables=opts, AR=os.environ.get("AR", "ar"), RANLIB=os.environ.get("RANLIB", "ranlib"),/' SConstruct
+    grep -q 'AR=os.environ.get' SConstruct || { error "SConstruct: AR hook not applied"; return 1; }
+  fi
+
   scons PREFIX=/usr \
-        GSSAPI=/usr/bin/krb5-config \
+        "${_xargs[@]}" \
         CFLAGS="${CFLAGS} -D_XOPEN_SOURCE=700"
 
   install -d "${srcdir}/dest/usr"
