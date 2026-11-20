@@ -3,9 +3,9 @@
 pkgname=(cyrus-sasl libsasl libsasl-devel)
 _basever=2.1.28
 pkgver=${_basever}
-pkgrel=5
+pkgrel=6
 pkgdesc="Cyrus Simple Authentication Service Layer (SASL) library"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://www.cyrusimap.org/sasl/"
 msys2_repository_url="https://github.com/cyrusimap/cyrus-sasl"
 msys2_references=(
@@ -44,20 +44,39 @@ prepare() {
 build() {
   cd ${srcdir}/${pkgname}-${_basever}
 
+  # aarch64-pc-cygwin cross: --host selects the cross compiler; sqlite (and
+  # OpenSSL, heimdal, libxcrypt through the compiler's own search path)
+  # come from the sysroot.  libtool's file_magic check only knows x86
+  # import libraries and would drop them from the plugin DLLs.
+  local _xargs=(--host=${CHOST}) _sqlite=/usr
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _sqlite=/usr/aarch64-pc-cygwin/usr
+    # (the SQL plugin's MySQL/PostgreSQL probe looks at the host's paths)
+    _xargs=(--host=aarch64-pc-cygwin lt_cv_deplibs_check_method=pass_all
+            --without-mysql --without-pgsql)
+  fi
+
   ./configure \
     --prefix=/usr \
     --sbindir=/usr/bin \
     --build=${CHOST} \
-    --host=${CHOST} \
+    "${_xargs[@]}" \
     --with-configdir=/etc/sasl2:/etc/sasl:/usr/lib/sasl2 \
     --with-plugindir=/usr/lib/sasl2 \
     --disable-static --enable-shared \
     --enable-sql \
-    --with-sqlite3=/usr \
+    --with-sqlite3=${_sqlite} \
     --disable-ldapdb \
     sasl_cv_dlsym_adds_uscore=yes
 
-  make CFLAGS="$CFLAGS -Wall -Wno-char-subscripts -Wno-unused -Wno-pointer-sign -Wno-uninitialized"
+  # -std=gnu17: the RSA md5.c/hmac code declares K&R prototypes
+  # (PROTO_LIST), which C23 -- GCC 15+'s default -- reads as "no
+  # arguments" ("too many arguments to function MD5_memset").
+  # -DHAVE_GSSAPI_GSSAPI_KRB5_H: m4/sasl2.m4 only looks for that header when
+  # gsskrb5_register_acceptor_identity does NOT link; with heimdal it links,
+  # so gssapi.c calls it undeclared, an error since GCC 14.  heimdal-devel
+  # always has the header.
+  make CFLAGS="$CFLAGS -std=gnu17 -DHAVE_GSSAPI_GSSAPI_KRB5_H=1 -Wall -Wno-char-subscripts -Wno-unused -Wno-pointer-sign -Wno-uninitialized"
 }
 
 package_cyrus-sasl() {
