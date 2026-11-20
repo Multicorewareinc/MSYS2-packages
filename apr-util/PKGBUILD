@@ -2,9 +2,9 @@
 
 pkgname=('apr-util' 'apr-util-devel')
 pkgver=1.6.5
-pkgrel=1
+pkgrel=2
 pkgdesc="The Apache Portable Runtime"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://apr.apache.org/"
 msys2_references=(
   "cpe: cpe:/a:apache:apr-util"
@@ -28,16 +28,30 @@ prepare() {
 build() {
   cd "${srcdir}/apr-util-${pkgver}"
 
+  # aarch64-pc-cygwin cross: --host selects the cross compiler, and apr,
+  # expat and sqlite come from the sysroot (its apr-1-config reports
+  # sysroot paths).
+  local _xargs=(--build=${CHOST}) _p=/usr
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _p=/usr/aarch64-pc-cygwin/usr
+    _xargs+=(--host=aarch64-pc-cygwin)
+  fi
+
   export MSYSTEM=CYGWIN
   ./configure \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --prefix=/usr \
-    --with-apr=/usr \
-    --with-expat=/usr \
+    --with-apr=${_p} \
+    --with-expat=${_p} \
     --without-gdbm \
     --without-ldap \
     --without-pgsql \
-    --with-sqlite3=/usr
+    --with-sqlite3=${_p}
+
+  # (cross: apr's build helpers, libtool included, are in the sysroot)
+  if [[ ${_p} != /usr ]]; then
+    sed -i "s|/usr/share/apr/build-1|${_p}/share/apr/build-1|g" Makefile build/rules.mk
+  fi
 
   make -j1
   make DESTDIR="${srcdir}/dest" install
