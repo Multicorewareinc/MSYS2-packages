@@ -4,7 +4,7 @@ _realname=gcc
 _target=aarch64-pc-cygwin
 pkgname="cross-msysarm64-${_realname}"
 pkgver=17.0.0
-pkgrel=4
+pkgrel=5
 pkgdesc="Cross GCC stage2 for aarch64-pc-cygwin (with full runtime)"
 arch=('i686' 'x86_64')
 url="https://gcc.gnu.org"
@@ -452,13 +452,22 @@ package() {
   esac
   _specs="${_gccdir}/specs"
   install -d "$(dirname "${_specs}")"
-  "${pkgdir}/usr/bin/${_target}-gcc" -dumpspecs     | awk -v w32="-L/usr/${_target}/lib/w32api" '/^\*link:$/{print; getline; print $0 "   --disable-high-entropy-va " w32; next} {print}'     > "${_specs}"
+  # The w32api -L goes into *link_libgcc after %D (gcc's own library
+  # directories, the sysroot's usr/lib among them), not into *link, which
+  # comes before them: w32api has its own libuuid.a (Windows GUIDs), and
+  # searched first it shadows util-linux's libuuid (-luuid found
+  # uuid_generate missing).  A native Cygwin ld likewise searches w32api
+  # last (SEARCH_DIR /usr/lib, then /usr/lib/w32api).
+  "${pkgdir}/usr/bin/${_target}-gcc" -dumpspecs     | awk -v w32="-L/usr/${_target}/lib/w32api" '
+        /^\*link:$/        {print; getline; print $0 "   --disable-high-entropy-va"; next}
+        /^\*link_libgcc:$/ {print; getline; print $0 " " w32; next}
+        {print}' > "${_specs}"
   grep -q -- '--disable-high-entropy-va' "${_specs}" ||
     { echo "==> ERROR: specs file did not get --disable-high-entropy-va" >&2; return 1; }
   # The Win32 import libraries (libkernel32.a & co.) ship in the w32api
   # subdirectory, which a native Cygwin gcc searches through its built-in
   # specs but this cross gcc does not; without the -L an installed toolchain
   # cannot link even "hello world" (cannot find -lkernel32).
-  grep -q -- "-L/usr/${_target}/lib/w32api" "${_specs}" ||
+  grep -A1 -- '^\*link_libgcc:$' "${_specs}" | grep -q -- "%D -L/usr/${_target}/lib/w32api" ||
     { echo "==> ERROR: specs file did not get the w32api library path" >&2; return 1; }
 }
