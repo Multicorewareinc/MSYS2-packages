@@ -2,9 +2,9 @@
 
 pkgname=subversion
 pkgver=1.14.5
-pkgrel=4
+pkgrel=5
 pkgdesc="A Modern Concurrent Version Control System"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://subversion.apache.org/"
 msys2_repository_url='https://github.com/apache/subversion'
 msys2_references=(
@@ -126,6 +126,15 @@ prepare() {
   sed 's/ -o libsvn_test-1.la / -no-undefined&/' -i build-outputs.mk
 }
 
+# aarch64-pc-cygwin cross: what the Perl bindings' Makefile.PL gets -- the
+# cross compiler and the sysroot's perl, as for the other XS modules.
+_svn_cross_mmargs() {
+  local _s=/usr/aarch64-pc-cygwin/usr
+  printf '%s ' CC=aarch64-pc-cygwin-gcc LD=aarch64-pc-cygwin-gcc \
+    PERL_INC=${_s}/lib/perl5/core_perl/CORE PERL_ARCHLIB=${_s}/lib/perl5/core_perl \
+    PERL=${_s}/bin/perl.exe FULLPERL=${_s}/bin/perl.exe
+}
+
 build() {
   export lt_cv_deplibs_check_method='pass_all'
   cd ${pkgname}-${pkgver}
@@ -133,13 +142,30 @@ build() {
 
   CFLAGS+=" -Wno-int-conversion -Wno-incompatible-pointer-types"
 
+  # aarch64-pc-cygwin cross: libraries from the sysroot (apr/apu-1-config
+  # there report sysroot paths; pkg-config, which configure uses for lz4
+  # & co., is pointed at it), and only the Perl bindings -- what git svn
+  # needs -- built with the target's perl, which runs natively on the
+  # ARM64 build machine.  Ruby and Python bindings are not cross-built.
+  local _p=/usr _xargs=() _cross=
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _cross=1
+    _p=/usr/aarch64-pc-cygwin/usr
+    export PKG_CONFIG_LIBDIR=${_p}/lib/pkgconfig PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-pc-cygwin
+    _xargs=(--host=aarch64-pc-cygwin
+            --with-sasl=${_p}
+            --with-swig-perl=${_p}/bin/perl.exe
+            --without-swig-python --without-swig-ruby)
+  fi
+
   ./configure --prefix=/usr \
       --build=${CHOST} \
-      --with-apr=/usr \
-      --with-apr-util=/usr \
-      --with-zlib=/usr \
-      --with-serf=/usr \
-      --with-sqlite=/usr \
+      "${_xargs[@]}" \
+      --with-apr=${_p} \
+      --with-apr-util=${_p} \
+      --with-zlib=${_p} \
+      --with-serf=${_p} \
+      --with-sqlite=${_p} \
       --without-apxs \
       --without-gnome-keyring \
       --with-utf8proc=internal \
@@ -149,9 +175,45 @@ build() {
       --enable-disallowing-of-undefined-references \
       --enable-local-library-preloading
 
-  make clean-swig
-  make autogen-swig
+  if [[ -n ${_cross} ]]; then
+    # The target perl reports its CORE as /usr/lib/perl5/core_perl/CORE,
+    # which on the build machine is the host's x86 perl: use the sysroot's.
+    sed -i "s| \([-][IL]\)/usr/lib/perl5/core_perl/CORE| \1${_p}/lib/perl5/core_perl/CORE|g" \
+      Makefile config.status
+    grep -q -- "-I${_p}/lib/perl5/core_perl/CORE" Makefile ||
+      { error "perl CORE path not rewritten"; return 1; }
+    # and the bindings' Makefile.PL gets the cross compiler and the
+    # sysroot's perl headers, as for the other XS modules.
+    sed -i 's|Makefile.PL PREFIX=$(prefix)|& $(SWIG_PL_MMARGS)|' Makefile
+    # libtool's Cygwin "rpath" is -L$libdir: -rpath /usr/lib then put the
+    # host's /usr/lib before the toolchain's own directories and ld took
+    # the x86 libmsys-2.0.a.  PE has no rpath, so drop it.
+    sed -i 's|^hardcode_libdir_flag_spec="-L.*libdir"$|hardcode_libdir_flag_spec=""|' libtool
+    ! grep -q '^hardcode_libdir_flag_spec="-L' libtool ||
+      { error "libtool rpath flag not dropped"; return 1; }
+    grep -q 'SWIG_PL_MMARGS' Makefile || { error "Makefile.PL hook not applied"; return 1; }
+  fi
+
+  if [[ -n ${_cross} ]]; then
+    # (clean-swig-headers too, as clean-swig does: the tarball's external
+    # runtime header is from an older SWIG than the regenerated wrappers)
+    make clean-swig-headers clean-swig-pl
+    make autogen-swig-pl
+  else
+    make clean-swig
+    make autogen-swig
+  fi
   make all
+
+  if [[ -n ${_cross} ]]; then
+    # The bindings' Makefile.PL runs on the ARM64 perl, a native program to
+    # the x86 MSYS runtime, which would turn PREFIX=/usr into
+    # PREFIX=C:/msys64/usr (the modules then install under that).
+    export MSYS2_ARG_CONV_EXCL="PREFIX="
+    plain "Compiling swig bindings: perl"
+    make swig-pl SWIG_PL_MMARGS="$(_svn_cross_mmargs)"
+    return 0
+  fi
 
   plain "Compiling swig bindings: ruby"
   RUBY_LIB="-l$(ruby -rrbconfig -e 'print RbConfig::CONFIG["RUBY_SO_NAME"]')"
@@ -197,6 +259,17 @@ build() {
 package() {
   cd ${pkgname}-${pkgver}
 
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    # (cross arm: Perl bindings only; the bindings' install runs on the
+    # ARM64 perl, so hand it a path both runtimes resolve)
+    # (install-swig-pl may rerun the bindings' Makefile.PL: same arguments
+    # as in build(), or it falls back to the host's g++; and PREFIX=/usr
+    # must reach it unconverted, see build())
+    export MSYS2_ARG_CONV_EXCL="PREFIX="
+    make -j1 DESTDIR="$(cygpath -m "${pkgdir}")" INSTALLDIRS=vendor \
+      SWIG_PL_MMARGS="$(_svn_cross_mmargs)" \
+      install install-tools install-swig-pl
+  else
   PYTHON_SITELIB=$(/usr/bin/python -c 'from distutils.sysconfig import * ; print(get_python_lib(0,0));')
   RUBY_LIB="-l$(ruby -rrbconfig -e 'print RbConfig::CONFIG["RUBY_SO_NAME"]')"
 
@@ -205,6 +278,7 @@ package() {
     swig_pydir=${PYTHON_SITELIB}/libsvn \
     swig_pydir_extra=${PYTHON_SITELIB}/svn \
     install install-tools install-swig-py install-swig-pl install-swig-rb
+  fi
 
   install -dm755 "${pkgdir}"/usr/share/subversion
   cp -a tools/hook-scripts "${pkgdir}"/usr/share/subversion/
