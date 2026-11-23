@@ -3,9 +3,9 @@
 pkgbase=libassuan
 pkgname=('libassuan' 'libassuan-devel')
 pkgver=3.0.2
-pkgrel=1
+pkgrel=2
 pkgdesc="A IPC library used by some GnuPG related software"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://gnupg.org/related_software/libassuan"
 msys2_repository_url='https://git.gnupg.org/cgi-bin/gitweb.cgi?p=libassuan.git'
 msys2_pgp_keys_url='https://gnupg.org/signature_key.html'
@@ -34,11 +34,23 @@ prepare() {
 }
 
 build() {
+  # aarch64-pc-cygwin cross: --host selects the cross compiler.
+  # Both libraries pass a cookie writer taking an int size to funopen(),
+  # whose prototype says size_t.  GCC >= 14 makes that
+  # -Wincompatible-pointer-types an error; the cross compiler is GCC 17.
+  # (A native rebuild with GCC 16 stops the same way; the x86_64 package
+  # predates it.)  The size arrives in a 64-bit register and the callee reads
+  # its low half, as before, so keep it a warning.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin
+             CFLAGS="${CFLAGS} -Wno-error=incompatible-pointer-types")
+  fi
   cd "${pkgname}-${_oldver}"
 
   ./configure \
     --prefix=/usr \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --enable-shared
 
   make no_undefined="-no-undefined"
@@ -49,7 +61,7 @@ build() {
 
   ./configure \
     --prefix=/usr \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --enable-shared \
     --enable-static
 
