@@ -5,9 +5,9 @@
 pkgbase=p11-kit
 pkgname=('p11-kit' 'libp11-kit' 'libp11-kit-devel')
 pkgver=0.26.5
-pkgrel=1
+pkgrel=2
 pkgdesc="Library to work with PKCS#11 modules"
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url="https://p11-glue.freedesktop.org/p11-kit.html"
 msys2_repository_url="https://github.com/p11-glue/p11-kit"
 msys2_references=(
@@ -43,7 +43,35 @@ build() {
   [[ -d ${srcdir}/build ]] && rm -rf ${srcdir}/build
   mkdir -p "${srcdir}/build" && cd "${srcdir}/build"
 
+  # aarch64-pc-cygwin cross: a meson cross file names the cross tools and
+  # the target, and points pkg-config at the toolchain sysroot, where the
+  # aarch64 libffi and libtasn1 are.
+  local _xargs=()
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    cat > cross.ini <<'EOF'
+[binaries]
+c = 'aarch64-pc-cygwin-gcc'
+cpp = 'aarch64-pc-cygwin-g++'
+ar = 'aarch64-pc-cygwin-ar'
+strip = 'aarch64-pc-cygwin-strip'
+windres = 'aarch64-pc-cygwin-windres'
+pkg-config = 'pkg-config'
+
+[properties]
+sys_root = '/usr/aarch64-pc-cygwin'
+pkg_config_libdir = '/usr/aarch64-pc-cygwin/usr/lib/pkgconfig'
+
+[host_machine]
+system = 'cygwin'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'
+EOF
+    _xargs=(--cross-file=cross.ini)
+  fi
+
   meson setup \
+    "${_xargs[@]}" \
     --prefix=/usr \
     --buildtype debugoptimized \
     -Dgtk_doc=true \
