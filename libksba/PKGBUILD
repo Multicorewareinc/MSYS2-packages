@@ -3,9 +3,9 @@
 pkgbase='libksba'
 pkgname=('libksba' 'libksba-devel')
 pkgver=1.8.1
-pkgrel=1
+pkgrel=2
 pkgdesc='A CMS and X.509 access library'
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url='https://www.gnupg.org/related_software/libksba/'
 msys2_repository_url='https://git.gnupg.org/cgi-bin/gitweb.cgi?p=libksba.git'
 msys2_references=(
@@ -37,11 +37,16 @@ prepare() {
 }
 
 build() {
+  # aarch64-pc-cygwin cross: --host selects the cross compiler.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+  fi
   cd "${pkgbase}-${pkgver}"
 
   ./configure \
     --prefix=/usr \
-    --build="${CHOST}" \
+    "${_xargs[@]}" \
     --enable-shared \
     --disable-static
 
