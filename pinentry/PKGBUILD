@@ -2,12 +2,12 @@
 
 pkgname=pinentry
 pkgver=1.3.3
-pkgrel=1
+pkgrel=2
 pkgdesc='A collection of simple PIN or passphrase entry dialogs which utilize the Assuan protocol'
 url='https://gnupg.org/related_software/pinentry/'
 msys2_repository_url="https://git.gnupg.org/cgi-bin/gitweb.cgi?p=pinentry.git"
 license=('spdx:GPL-2.0-or-later')
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 makedepends=('ncurses-devel' 'libassuan-devel' 'libgpg-error-devel' 'autotools' 'gcc')
 depends=('ncurses' 'libassuan' 'libgpg-error')
 source=(https://gnupg.org/ftp/gcrypt/${pkgname}/${pkgname}-${pkgver}.tar.bz2{,.sig}
@@ -29,10 +29,15 @@ prepare() {
 }
 
 build() {
+  # aarch64-pc-cygwin cross: --host selects the cross compiler.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+  fi
   cd "${srcdir}/${pkgname}-${pkgver}"
 
   ./configure \
-    --build=${CHOST} \
+    "${_xargs[@]}" \
     --prefix=/usr \
     --disable-pinentry-tty \
     --disable-fallback-curses \
