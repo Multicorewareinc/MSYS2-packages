@@ -3,9 +3,9 @@
 pkgbase='libgcrypt'
 pkgname=('libgcrypt' 'libgcrypt-devel')
 pkgver=1.12.4
-pkgrel=1
+pkgrel=2
 pkgdesc='General purpose cryptographic library based on the code from GnuPG'
-arch=('i686' 'x86_64')
+arch=('i686' 'x86_64' 'aarch64')
 url='https://gnupg.org'
 msys2_repository_url='https://git.gnupg.org/cgi-bin/gitweb.cgi?p=libgcrypt.git'
 msys2_references=(
@@ -43,11 +43,16 @@ prepare() {
 }
 
 build() {
+  # aarch64-pc-cygwin cross: --host selects the cross compiler.
+  local _xargs=(--build=${CHOST})
+  if [[ ${CARCH} == aarch64 || -n ${MSYS2_ARM64_CROSS:-} ]]; then
+    _xargs+=(--host=aarch64-pc-cygwin)
+  fi
   cd "${pkgbase}-${pkgver}"
 
   ./configure \
     --prefix=/usr \
-    --build="${CHOST}" \
+    "${_xargs[@]}" \
     --enable-shared \
     --enable-static \
     --exec-prefix=/usr \
