@@ -5,7 +5,7 @@
 pass=0; fail=0
 ok() { echo "PASS: $1"; pass=$((pass+1)); }
 ko() { echo "FAIL: $1 -- $2"; fail=$((fail+1)); }
-G=/home/HCKTest/gfw-tests/t4/gitarm64/clangarm64
+G=${GFW_TESTS:-/c/msys64/home/$(id -un)/gfw-tests}/t4/gitarm64/clangarm64
 T=$(mktemp -d); cd "$T" || exit 1
 R=file://$T/repo
 

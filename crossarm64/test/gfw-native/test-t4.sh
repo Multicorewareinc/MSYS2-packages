@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Native ARM64 tests for zstd, lz4, gzip, tar (run with the ARM64 bash from the sysroot).
 # usage: test-t4.sh <zstd|lz4|gzip|tar>
-D=/c/msys64/home/HCKTest/gfw-tests/t4
+D=${GFW_TESTS:-/c/msys64/home/$(id -un)/gfw-tests}/t4
 cd "$D"; rm -rf out-$1; mkdir out-$1; O=out-$1
 pass=0; fail=0
 ok()  { pass=$((pass+1)); echo "PASS: $*"; }

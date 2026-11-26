@@ -38,5 +38,5 @@ The DLLs that `swap2.sh` doesn't cover were swapped by hand for 2.55:
 | `run-perl-core-tests.sh` | The perl core test suite from the build tree |
 | `test-t5.sh`, `test-svn.sh` | Tier 5: file/libmagic, svn/svnadmin/svnserve, SVN:: Perl bindings, git svn clone/dcommit/rebase |
 
-Paths such as `/home/HCKTest/gfw-tests` and `C:\gfw-native` are the ones used
+Paths such as `/c/msys64/home/<user>/gfw-tests` (override: `GFW_TESTS`, `REPO`, `PKGDEST`) and `C:\gfw-native` are the ones used
 on the build machine. Change them to match yours.

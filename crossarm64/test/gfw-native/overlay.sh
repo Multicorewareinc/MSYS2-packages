@@ -4,7 +4,7 @@
 # official tree replaces it (so .pm files match their XS .dll).
 N=/c/gfw-native/native; O=/c/gfw-native/official; X=/c/gfw-native/x; mkdir -p $X
 : > /c/gfw-native/overlay-log.txt
-pick() { ls -t ~/aarch64-pkgs-dllentry/userland/$1-[0-9]*-aarch64.pkg.tar.zst ~/aarch64-pkgs/userland/$1-[0-9]*-aarch64.pkg.tar.zst 2>/dev/null | head -1; }
+pick() { ls -t ${PKGDEST:-$HOME/aarch64-pkgs}/userland/$1-[0-9]*-aarch64.pkg.tar.zst 2>/dev/null | head -1; }
 awk '{print $1}' $O/etc/package-versions.txt | grep -v '^mingw-w64' | while read -r name; do
   lname=$(echo "$name" | tr 'A-Z' 'a-z')
   p=$(pick "$name"); [ -z "$p" ] && p=$(pick "$lname")

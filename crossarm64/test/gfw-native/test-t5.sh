@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Native ARM64 tests for pcre2, less, file, nano.  usage: test-t5.sh <pkg>
-D=/c/msys64/home/HCKTest/gfw-tests/t5
+D=${GFW_TESTS:-/c/msys64/home/$(id -un)/gfw-tests}/t5
 cd "$D"
 pass=0; fail=0
 ok()  { pass=$((pass+1)); echo "PASS: $*"; }

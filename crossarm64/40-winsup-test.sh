@@ -159,3 +159,9 @@ for t in PASS FAIL XFAIL XPASS SKIP ERROR; do
   printf '  %-6s %s\n' "$t" "$n"
 done
 echo "  logs: $TS  (*.log, *.trs)"
+
+# the cygserver started above keeps the test runtime DLL loaded, which makes
+# the next "makepkg -C" of the stage-2 runtime fail to delete src/
+for pid in $(ps -W 2>/dev/null | awk 'tolower($NF) ~ /cygserver\.exe$/ {print $1}'); do
+  /usr/bin/kill -f "$pid" 2>/dev/null
+done
